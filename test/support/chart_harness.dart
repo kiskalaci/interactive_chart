@@ -1,4 +1,5 @@
 import "package:flutter/material.dart";
+import "package:flutter_test/flutter_test.dart";
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 
@@ -35,6 +36,8 @@ class ChartHarness<T> {
     this.layers,
     this.anchor = ChartAnchor.left,
     this.slotExtent = 8,
+    this.minSlotExtent = 1,
+    this.maxSlotExtent = 64,
     this.valueAxis = const ValueAxisConfig(),
     this.timeAxis = const TimeAxisConfig(),
   });
@@ -43,6 +46,8 @@ class ChartHarness<T> {
   final List<ChartLayer<T>> Function()? layers;
   final ChartAnchor anchor;
   final double slotExtent;
+  final double minSlotExtent;
+  final double maxSlotExtent;
   final ValueAxisConfig? valueAxis;
   final TimeAxisConfig? timeAxis;
 
@@ -61,6 +66,8 @@ class ChartHarness<T> {
               timeOf: timeOf,
               initialAnchor: anchor,
               initialSlotExtent: slotExtent,
+              minSlotExtent: minSlotExtent,
+              maxSlotExtent: maxSlotExtent,
               valueAxis: valueAxis,
               timeAxis: timeAxis,
               layers: [...?layers?.call(), ContextProbe<T>((c) => ctx = c)],
@@ -68,4 +75,12 @@ class ChartHarness<T> {
           ),
         ),
       );
+}
+
+/// Makes the test screen large enough for charts wider than the default
+/// 800 px; without it a wider `SizedBox` is silently clamped to the screen.
+void useLargeSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(2000, 1000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
 }

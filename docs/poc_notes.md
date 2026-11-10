@@ -91,6 +91,9 @@ Tests: `flutter test` from the package root.
   rebuild of the chart marks autoscale dirty, so a live tick that moves the
   last bar's high or low outside the current extent rescales immediately
   (R-SCALE-10). Pans and zooms that don't change the data don't trigger it.
+- **Visible range is exact.** `[visibleStart, visibleEnd)` holds precisely the
+  slots that overlap the viewport; a slot starting on the right edge is not
+  counted.
 - **Value-axis ticks use the 1/2/2.5/5/10 ladder** (R-AXIS-8).
 - **`onIndexHighlighted` reports `null` over a projected slot** (R-TIME-29).
   The crosshair still shows the projected time badge; there is no separate
@@ -291,18 +294,30 @@ so the first offset can sit up to a gutter-growth short of the final maximum
 
 ### 2. Horizontal scale, viewport and anchoring (§5, §6.1)
 
+Implemented in `test/horizontal_scale_test.dart`, all passing. Writing them
+found one bug, now fixed: when the viewport's right edge landed exactly on a
+slot boundary, `visibleEnd` included one extra slot that was not on screen
+(TC-X-02). The context now computes the range as
+`[floor(offset / extent), ceil((offset + width) / extent))`.
+
+Test-writing gotchas, handled in `test/support/chart_harness.dart`: a
+`SizedBox` wider than the default 800 px test screen is silently clamped (use
+`useLargeSurface(tester)`), and `initialSlotExtent` / `initialAnchor` are read
+once, so a second chart with different initial values needs a fresh widget
+tree (pump a `SizedBox()` in between).
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-X-01 | `xOf(i)` against `indexAtViewportX(x)` across zoom levels | Round-trips to the same index; slot centre maps to the slot | U | P0 |
-| TC-X-02 | Visible range culling | `[visibleStart, visibleEnd)` covers exactly the slots intersecting the viewport, clamped to real data | U | P0 |
-| TC-X-03 | `initialAnchor: left` | Opens with `visibleStart == 0` | W | P0 |
-| TC-X-04 | `initialAnchor: right` | Opens at max scroll offset, newest datum visible with overscroll space after it | W | P0 |
-| TC-X-05 | Initial anchor is applied only once | Later data changes or viewport resizes never re-anchor | W | P0 |
-| TC-X-06 | Overscroll past the newest datum (R-SCROLL-4) | Allowed up to half the viewport width, no further | W | P0 |
-| TC-X-07 | Overscroll before the oldest datum | Not allowed (min scroll offset is 0) | W | P1 |
-| TC-X-08 | `initialSlotExtent` outside `[minSlotExtent, maxSlotExtent]` | Clamped | U | P1 |
-| TC-X-09 | Viewport resize (window or parent shrinks or grows) | Scroll re-clamped; no jump beyond the clamp; visible range recomputed | W | P0 |
-| TC-X-10 | Data shorter than the viewport | Content fits; scroll limits are consistent; no negative ranges | W | P1 |
+| TC-X-01 | ✅ `xOf(i)` against `indexAtViewportX(x)` across zoom levels | Round-trips to the same index; slot centre maps to the slot | U | P0 |
+| TC-X-02 | ✅ Visible range culling | `[visibleStart, visibleEnd)` covers exactly the slots intersecting the viewport, clamped to real data | U | P0 |
+| TC-X-03 | ✅ `initialAnchor: left` | Opens with `visibleStart == 0` | W | P0 |
+| TC-X-04 | ✅ `initialAnchor: right` | Opens at max scroll offset, newest datum visible with overscroll space after it | W | P0 |
+| TC-X-05 | ✅ Initial anchor is applied only once | Later data changes or viewport resizes never re-anchor | W | P0 |
+| TC-X-06 | ✅ Overscroll past the newest datum (R-SCROLL-4) | Allowed up to half the viewport width, no further | W | P0 |
+| TC-X-07 | ✅ Overscroll before the oldest datum | Not allowed (min scroll offset is 0) | W | P1 |
+| TC-X-08 | ✅ `initialSlotExtent` outside `[minSlotExtent, maxSlotExtent]` | Clamped | U | P1 |
+| TC-X-09 | ✅ Viewport resize (window or parent shrinks or grows) | Scroll re-clamped; no jump beyond the clamp; visible range recomputed | W | P0 |
+| TC-X-10 | ✅ Data shorter than the viewport | Content fits; scroll limits are consistent; no negative ranges | W | P1 |
 
 ### 3. Value scale and autoscale (§5, R-SCALE-*)
 

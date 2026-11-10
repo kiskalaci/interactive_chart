@@ -250,11 +250,13 @@ class InteractiveChartContext extends ChangeNotifier {
       visibleEnd = 0;
       return;
     }
-    final i0 = indexAtViewportX(0);
-    final i1 = indexAtViewportX(viewportWidth);
-    final lo = math.min(i0, i1);
-    final hi = math.max(i0, i1);
-    visibleStart = lo.clamp(0, math.max(0, slotCount - 1));
-    visibleEnd = (hi + 1).clamp(visibleStart, slotCount);
+    // Slot i covers content pixels [i * extent, (i + 1) * extent). It is in
+    // view when that interval overlaps [offset, offset + width), so the last
+    // slot is the one holding the viewport's right edge — a slot that merely
+    // starts at the edge is not visible.
+    final first = (_scrollOffset / _slotExtent).floor();
+    final end = ((_scrollOffset + viewportWidth) / _slotExtent).ceil();
+    visibleStart = first.clamp(0, math.max(0, slotCount - 1));
+    visibleEnd = end.clamp(visibleStart, slotCount);
   }
 }
