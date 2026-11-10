@@ -23,6 +23,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # dart format reads the language version from package_config.json, so
+      # widgetbook needs its own pub get to be formatted with the same style.
+      - name: Install widgetbook dependencies
+        run: flutter pub get
+        working-directory: widgetbook
+
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
 
