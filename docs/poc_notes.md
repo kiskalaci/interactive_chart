@@ -94,6 +94,8 @@ Tests: `flutter test` from the package root.
 - **Visible range is exact.** `[visibleStart, visibleEnd)` holds precisely the
   slots that overlap the viewport; a slot starting on the right edge is not
   counted.
+- **Re-enabling autoscale rescales immediately**, including after a manual
+  value zoom and on double-tap of the value axis.
 - **Value-axis ticks use the 1/2/2.5/5/10 ladder** (R-AXIS-8).
 - **`onIndexHighlighted` reports `null` over a projected slot** (R-TIME-29).
   The crosshair still shows the projected time badge; there is no separate
@@ -321,20 +323,31 @@ tree (pump a `SizedBox()` in between).
 
 ### 3. Value scale and autoscale (§5, R-SCALE-*)
 
+Implemented in `test/value_scale_test.dart` (TC-SCALE-07 and TC-SCALE-11 are in
+`test/known_gaps_test.dart`), all passing. Writing them found one more bug,
+now fixed: after a manual value zoom, re-enabling autoscale (the controller's
+`setAutoscale(true)` or a double-tap on the value axis) did not rescale,
+because the widget recomputed only when the visible range or data changed. It
+now also recomputes when autoscale goes from off to on (TC-SCALE-09 and 09b).
+
+Two behaviours the tests pin down: with nothing to scale, the fallback
+extent is `0..1` *plus* the 5 % padding (`-0.05..1.05`), and a flat series
+spans `value ± 0.5` before padding.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-SCALE-01 | Autoscale uses only the visible range (R-SCALE-8) | Extent equals min/max of contributing layers over visible indices, plus 5 % padding | W | P0 |
-| TC-SCALE-02 | Layers that opt out (`GridLayer`, `HistogramLayer` default, `LineLayer(contributesToExtent: false)`) | Excluded from extent | U | P0 |
-| TC-SCALE-03 | `HistogramLayer(contributesToExtent: true)` | Contributes `(0, max)` | U | P1 |
-| TC-SCALE-04 | Degenerate extent: all visible values equal, or one datum (R-SCALE-11) | Extent is value ± 0.5 before padding; no divide-by-zero | U | P0 |
-| TC-SCALE-05 | No contributing layer has data in range | Extent falls back to `0..1` | U | P1 |
-| TC-SCALE-06 | Pan within the same index range (R-SCALE-10) | Autoscale is not recomputed | W | P1 |
+| TC-SCALE-01 | ✅ Autoscale uses only the visible range (R-SCALE-8) | Extent equals min/max of contributing layers over visible indices, plus 5 % padding | W | P0 |
+| TC-SCALE-02 | ✅ Layers that opt out (`GridLayer`, `HistogramLayer` default, `LineLayer(contributesToExtent: false)`) | Excluded from extent | U | P0 |
+| TC-SCALE-03 | ✅ `HistogramLayer(contributesToExtent: true)` | Contributes `(0, max)` | U | P1 |
+| TC-SCALE-04 | ✅ Degenerate extent: all visible values equal, or one datum (R-SCALE-11) | Extent is value ± 0.5 before padding; no divide-by-zero | U | P0 |
+| TC-SCALE-05 | ✅ No contributing layer has data in range | Extent falls back to `0..1` | U | P1 |
+| TC-SCALE-06 | ✅ Pan within the same index range (R-SCALE-10) | Autoscale is not recomputed | W | P1 |
 | TC-SCALE-07 | ✅ (fixed) Live tick raises the last candle's high above the current extent, length unchanged | Spec: extent updates ("or the underlying data changes"). Current code recomputes only when range or length changes, so the new high can be clipped | W | P0 |
-| TC-SCALE-08 | Autoscale off, then data changes | Manual extent is kept | W | P0 |
-| TC-SCALE-09 | `setAutoscale(true)` after a manual extent | Extent is recomputed immediately | W | P0 |
-| TC-SCALE-10 | `yOf` / `valueOfViewportY` inverse | Round-trips within floating-point tolerance | U | P0 |
+| TC-SCALE-08 | ✅ Autoscale off, then data changes | Manual extent is kept | W | P0 |
+| TC-SCALE-09 | ✅ `setAutoscale(true)` after a manual extent | Extent is recomputed immediately | W | P0 |
+| TC-SCALE-10 | ✅ `yOf` / `valueOfViewportY` inverse | Round-trips within floating-point tolerance | U | P0 |
 | TC-SCALE-11 | ✅ (fixed) Value tick steps (R-AXIS-8) | Spec asks for a 1/2/2.5/5/10 progression; `niceValueTicks` produces 1/2/5/10 only | U | P1 |
-| TC-SCALE-12 | Value ticks across magnitudes (0.0001 to 1e9, negative ranges, ranges crossing zero) | Ticks are ascending, evenly stepped, inside the extent, about 5 of them | U | P0 |
+| TC-SCALE-12 | ✅ Value ticks across magnitudes (0.0001 to 1e9, negative ranges, ranges crossing zero) | Ticks are ascending, evenly stepped, inside the extent, about 5 of them | U | P0 |
 
 ### 4. Pan and zoom gestures (§6)
 

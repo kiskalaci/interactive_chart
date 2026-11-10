@@ -86,6 +86,11 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   /// the visible range and the data length are unchanged (R-SCALE-10).
   bool _autoscaleDirty = true;
 
+  /// Whether autoscale was on at the last check. Switching it back on after
+  /// a manual extent must recompute even though the range and data are
+  /// unchanged.
+  bool _wasAutoscaling = true;
+
   double? _lastTickSlotExtentBucket;
   int _lastTickSlotCount = -1;
 
@@ -208,13 +213,16 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   }
 
   void _maybeAutoscale() {
+    final reEnabled = ctx.autoscale && !_wasAutoscaling;
+    _wasAutoscaling = ctx.autoscale;
     if (ctx.autoscale) {
       final s = ctx.visibleStart;
       final e = ctx.visibleEnd;
       if (s != _lastAutoscaleStart ||
           e != _lastAutoscaleEnd ||
           widget.data.length != _lastDataLength ||
-          _autoscaleDirty) {
+          _autoscaleDirty ||
+          reEnabled) {
         _autoscaleDirty = false;
         _lastAutoscaleStart = s;
         _lastAutoscaleEnd = e;
