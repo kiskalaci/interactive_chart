@@ -153,6 +153,43 @@ void main() {
     });
   });
 
+  group("pan and pinch work on empty space, with or without the crosshair", () {
+    for (final crosshair in [true, false]) {
+      testWidgets("crosshair enabled: $crosshair", (tester) async {
+        // A flat, low line: the point where the finger lands is empty.
+        final h = ChartHarness<int>(
+          timeOf: minuteTime,
+          crosshairEnabled: crosshair,
+          valueAxis: null,
+          timeAxis: null,
+          layers: () => [LineLayer<int>(valueOf: (i) => i < 0 ? 0 : 5)],
+        );
+        await tester.pumpWidget(h.app(intSeries(0, 400)));
+        await tester.pumpAndSettle();
+        final origin = tester.getTopLeft(_chartFinder);
+        final empty = origin + const Offset(500, 40); // far from the line
+
+        final finger = await tester.startGesture(empty);
+        for (var i = 1; i <= 10; i++) {
+          await finger.moveTo(empty + Offset(-10.0 * i, 0));
+          await tester.pump();
+        }
+        await finger.up();
+        await tester.pumpAndSettle();
+        expect(h.ctx.scrollOffset, closeTo(100, 0.5));
+
+        final before = h.ctx.slotExtent;
+        await _pinch(
+          tester,
+          center: origin + const Offset(400, 40),
+          startSpan: 100,
+          endSpan: 200,
+        );
+        expect(h.ctx.slotExtent, greaterThan(before * 1.5));
+      });
+    }
+  });
+
   testWidgets("TC-GEST-03 vertical movement pans the value extent", (
     tester,
   ) async {

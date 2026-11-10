@@ -1,5 +1,6 @@
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
+import "package:interactive_chart/src/ticks.dart";
 
 enum ValueAxisPlacement { left, right }
 
@@ -15,8 +16,10 @@ class ValueAxisConfig {
   final String Function(double value)? formatter;
   final TextStyle textStyle;
 
-  String format(double value) =>
-      formatter?.call(value) ?? value.toStringAsFixed(2);
+  /// Formats [value]. Without a [formatter], [decimals] places are used
+  /// (the axis passes enough to tell adjacent ticks apart).
+  String format(double value, {int decimals = 2}) =>
+      formatter?.call(value) ?? value.toStringAsFixed(decimals);
 }
 
 /// Renders tick labels for the value axis gutter as positioned [Text]
@@ -35,15 +38,17 @@ class ValueAxisView extends StatelessWidget {
       final width = constraints.maxWidth;
       final height = constraints.maxHeight;
       final labels = <Widget>[];
+      final decimals = valueDecimals(ctx.valueTicks);
       for (final v in ctx.valueTicks) {
         final y = ctx.yOf(v);
         if (y < -8 || y > height + 8) {
           continue;
         }
-        final text = config.format(v);
+        final text = config.format(v, decimals: decimals);
         final painter = TextPainter(
           text: TextSpan(text: text, style: config.textStyle),
           textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(context),
         )..layout(maxWidth: width);
         final dx = config.placement == ValueAxisPlacement.right
             ? 4.0
@@ -65,13 +70,19 @@ class ValueAxisView extends StatelessWidget {
 /// keep the gutter width sticky (R-AXIS-5: grow-only within a session).
 double measureValueAxisWidth(
   InteractiveChartContext ctx,
-  ValueAxisConfig config,
-) {
+  ValueAxisConfig config, {
+  TextScaler textScaler = TextScaler.noScaling,
+}) {
   var maxWidth = 0.0;
+  final decimals = valueDecimals(ctx.valueTicks);
   for (final v in ctx.valueTicks) {
     final painter = TextPainter(
-      text: TextSpan(text: config.format(v), style: config.textStyle),
+      text: TextSpan(
+        text: config.format(v, decimals: decimals),
+        style: config.textStyle,
+      ),
       textDirection: TextDirection.ltr,
+      textScaler: textScaler,
     )..layout();
     if (painter.width > maxWidth) {
       maxWidth = painter.width;

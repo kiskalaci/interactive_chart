@@ -16,6 +16,17 @@ class InteractiveChartController extends ChangeNotifier {
     ctx.addListener(notifyListeners);
   }
 
+  /// Detaches from [ctx], if this controller is attached to it, so it stops
+  /// receiving the chart's events and can be reused with another chart.
+  /// Called by the chart when it is replaced or disposed.
+  void detach(InteractiveChartContext ctx) {
+    if (_ctx != ctx) {
+      return;
+    }
+    ctx.removeListener(notifyListeners);
+    _ctx = null;
+  }
+
   bool get isAttached => _ctx != null;
 
   IndexRange get visibleRange =>

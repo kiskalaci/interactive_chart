@@ -98,8 +98,15 @@ List<TickMark> buildTickMarks({
   }
 
   final minIndexGap = math.max(1, (minLabelSpacingPx / slotExtent).ceil());
+  // Heaviest first; equal weights go to the earlier slot. `List.sort` is not
+  // stable, so without this tie-break which of two equal-weight neighbours
+  // gets the label would be arbitrary, and could flip when data is appended
+  // or the zoom changes. It also lets the first datum (R-TIME-2) win a tie.
   final order = List<int>.generate(n, (i) => i)
-    ..sort((a, b) => weights[b].compareTo(weights[a]));
+    ..sort((a, b) {
+      final byWeight = weights[b].compareTo(weights[a]);
+      return byWeight != 0 ? byWeight : a.compareTo(b);
+    });
 
   final accepted = <int>[];
   for (final i in order) {
@@ -225,6 +232,34 @@ DateTime projectTime(
   sampleSize: sampleSize,
   skipWeekends: skipWeekends,
 ).last;
+
+/// How many decimals value labels need so adjacent ticks read differently:
+/// enough to show the tick step exactly, and never fewer than two. Tiny
+/// ranges (1e-8) would otherwise all print as `0.00`.
+int valueDecimals(List<double> ticks) {
+  if (ticks.length < 2) {
+    return 2;
+  }
+  final step = (ticks[1] - ticks[0]).abs();
+  if (!step.isFinite || step == 0) {
+    return 2;
+  }
+  // The smallest number of decimals at which the step is a whole number of
+  // units in the last place (within rounding error). Relative, so a tiny step
+  // is not mistaken for zero.
+  bool whole(double scaled) {
+    final nearest = scaled.round();
+    return nearest != 0 && (scaled - nearest).abs() <= 1e-6 * nearest;
+  }
+
+  var decimals = 0;
+  var scaled = step;
+  while (decimals < 12 && !whole(scaled)) {
+    decimals++;
+    scaled *= 10;
+  }
+  return math.max(2, decimals);
+}
 
 /// "Nice" step value-axis ticks (R-AXIS-8: 1/2/2.5/5/10 progression).
 List<double> niceValueTicks(double min, double max, {int targetCount = 5}) {

@@ -96,6 +96,20 @@ Tests: `flutter test` from the package root.
   counted.
 - **`panEnabled: false` really disables dragging.** A zoom then stays
   anchored at the gesture's start focal point.
+- **A page prepended mid-drag does not move the view.**
+- **Pan and pinch work on empty space** with or without the crosshair, and a
+  tiny chart drops axes that do not fit instead of overflowing.
+- **Unbounded constraints give a clear debug message.**
+- **Value labels show enough decimals** for tiny ranges and huge values.
+- **Axis gutters honour the text scale.**
+- **Equal-weight time marks are tie-broken by index**, so labels are stable
+  when data is appended or the zoom changes.
+- **The crosshair time badge shows the time of day** and can be formatted with
+  `CrosshairLayer.timeFormatter`; badges are kept inside the viewport.
+- **Touch crosshair** (tap, long press and drag) uses raw pointer events and
+  works anywhere in the viewport without delaying pan or pinch.
+- **The latest-point marker keeps its state** across pans, zooms and appends.
+- **Controllers detach** when replaced or when the chart is disposed.
 - **Re-enabling autoscale rescales immediately**, including after a manual
   value zoom and on double-tap of the value axis.
 - **Value-axis ticks use the 1/2/2.5/5/10 ladder** (R-AXIS-8).
@@ -397,114 +411,178 @@ Behaviours the tests pin down, worth knowing when writing more:
 
 ### 5. Axes and axis gutters (§7.1–7.2, R-ZOOM-2, R-SCROLL-6..8)
 
+Implemented in `test/axes_test.dart`, all passing. Bug found and fixed:
+the axis gutters were measured without the user's text scale, so at 2× text
+the value labels overflowed their gutter and the time labels were clipped.
+Both gutters now honour `MediaQuery.textScalerOf` (the time axis grows with the
+scale, never below 22 px). TC-AXIS-05 and 06 exercise `ValueAxisView` and
+`TimeAxisView` directly.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-AXIS-01 | All four present/absent combinations of value and time axis (R-TEST-2) | Viewport reclaims the gutter of any absent axis | W | P0 |
-| TC-AXIS-02 | Value axis left vs right; time axis top vs bottom | Gutters sit on the right side; viewport and the other axis are aligned | W, G | P0 |
-| TC-AXIS-03 | Value gutter grows when a wider label appears (R-AXIS-5) | Width grows; it never shrinks while panning | W | P0 |
-| TC-AXIS-04 | Custom `ValueAxisConfig.formatter` / `TimeAxisConfig.formatter` | Used for every label | W | P0 |
-| TC-AXIS-05 | Value labels outside the viewport (beyond ±8 px) | Not rendered | W | P2 |
-| TC-AXIS-06 | Time label that would cross a viewport edge (R-TIME-15) | Dropped, not clipped | W | P0 |
-| TC-AXIS-07 | Wheel on the time axis | Zooms x anchored at the pointer x | W | P0 |
-| TC-AXIS-08 | Horizontal drag on the time axis | Zooms x; right drag zooms in | W | P1 |
-| TC-AXIS-09 | Wheel on the value axis | Zooms y anchored at the pointer y; autoscale off | W | P0 |
-| TC-AXIS-10 | Vertical drag on the value axis | Zooms y; autoscale off | W | P1 |
-| TC-AXIS-11 | Double-tap on the value axis | Autoscale back on, extent recomputed | W | P0 |
-| TC-AXIS-12 | Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ 60) | Applied to the right marks | W | P1 |
-| TC-AXIS-13 | Text scale factor 2.0 (accessibility font size) | Labels and gutters grow; no overlap or overflow errors | W | P1 |
+| TC-AXIS-01 | ✅ All four present/absent combinations of value and time axis (R-TEST-2) | Viewport reclaims the gutter of any absent axis | W | P0 |
+| TC-AXIS-02 | ✅ Value axis left vs right; time axis top vs bottom | Gutters sit on the right side; viewport and the other axis are aligned | W, G | P0 |
+| TC-AXIS-03 | ✅ Value gutter grows when a wider label appears (R-AXIS-5) | Width grows; it never shrinks while panning | W | P0 |
+| TC-AXIS-04 | ✅ Custom `ValueAxisConfig.formatter` / `TimeAxisConfig.formatter` | Used for every label | W | P0 |
+| TC-AXIS-05 | ✅ Value labels outside the viewport (beyond ±8 px) | Not rendered | W | P2 |
+| TC-AXIS-06 | ✅ Time label that would cross a viewport edge (R-TIME-15) | Dropped, not clipped | W | P0 |
+| TC-AXIS-07 | ✅ Wheel on the time axis | Zooms x anchored at the pointer x | W | P0 |
+| TC-AXIS-08 | ✅ Horizontal drag on the time axis | Zooms x; right drag zooms in | W | P1 |
+| TC-AXIS-09 | ✅ Wheel on the value axis | Zooms y anchored at the pointer y; autoscale off | W | P0 |
+| TC-AXIS-10 | ✅ Vertical drag on the value axis | Zooms y; autoscale off | W | P1 |
+| TC-AXIS-11 | ✅ Double-tap on the value axis | Autoscale back on, extent recomputed | W | P0 |
+| TC-AXIS-12 | ✅ Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ 60) | Applied to the right marks | W | P1 |
+| TC-AXIS-13 | ✅ Text scale factor 2.0 (accessibility font size) | Labels and gutters grow; no overlap or overflow errors | W | P1 |
 
 ### 6. Time-axis tick hierarchy (§7.3, R-TEST-4)
 
+Implemented in `test/time_ticks_test.dart`. Bug found and fixed:
+`buildTickMarks` sorted candidates by weight only and `List.sort` is not
+stable, so which of two equal-weight neighbours got the label was arbitrary.
+Labels could change when data was appended or the zoom changed, and the first
+datum could lose its label to an equal-weight neighbour (R-TIME-2). Ties now go
+to the earlier slot.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-TIME-01 | `timeWeight` per tier: year, month, day, hour, minute, sub-minute | 70 / 60 / 50 / 30 / 20 / 10 | U | P0 |
-| TC-TIME-02 | First datum | Always weight 70 (R-TIME-2) | U | P0 |
-| TC-TIME-03 | Greedy selection | Higher weights win; no two accepted marks closer than `minLabelSpacingPx` (56 px) | U | P0 |
-| TC-TIME-04 | Pan at fixed zoom (R-TIME-9) | Mark set unchanged; marks only translate | W | P0 |
-| TC-TIME-05 | Sustained pinch (R-TIME-11) | Mark set changes only when the quantised slot-extent bucket changes (6 steps per doubling); no flicker between adjacent frames | W | P0 |
-| TC-TIME-06 | Labels by weight | Year → `2024`, month → `Mar`, day → `14`, hour/minute → `hh:mm`, sub-minute → `hh:mm:ss` | U | P0 |
-| TC-TIME-07 | Calendar edge cases: month end, year end, leap day, DST transitions in local time | Weights are correct on each boundary; no duplicated or missing label | U | P0 |
-| TC-TIME-08 | Mark set includes projected slots (R-TIME-24) | Scrolling into overscroll does not change the mark set | W | P0 |
-| TC-TIME-09 | Full zoom sweep from min to max slot extent on a daily series | At every bucket, labels never overlap and the coarsest boundary is labelled | W, G | P1 |
+| TC-TIME-01 | ✅ `timeWeight` per tier: year, month, day, hour, minute, sub-minute | 70 / 60 / 50 / 30 / 20 / 10 | U | P0 |
+| TC-TIME-02 | ✅ First datum | Always weight 70 (R-TIME-2) | U | P0 |
+| TC-TIME-03 | ✅ Greedy selection | Higher weights win; no two accepted marks closer than `minLabelSpacingPx` (56 px) | U | P0 |
+| TC-TIME-04 | ✅ Pan at fixed zoom (R-TIME-9) | Mark set unchanged; marks only translate | W | P0 |
+| TC-TIME-05 | ✅ Sustained pinch (R-TIME-11) | Mark set changes only when the quantised slot-extent bucket changes (6 steps per doubling); no flicker between adjacent frames | W | P0 |
+| TC-TIME-06 | ✅ Labels by weight | Year → `2024`, month → `Mar`, day → `14`, hour/minute → `hh:mm`, sub-minute → `hh:mm:ss` | U | P0 |
+| TC-TIME-07 | ✅ Calendar edge cases: month end, year end, leap day, DST transitions in local time | Weights are correct on each boundary; no duplicated or missing label | U | P0 |
+| TC-TIME-08 | ✅ Mark set includes projected slots (R-TIME-24) | Scrolling into overscroll does not change the mark set | W | P0 |
+| TC-TIME-09 | ✅ Full zoom sweep from min to max slot extent on a daily series | At every bucket, labels never overlap and the coarsest boundary is labelled | W, G | P1 |
 
 ### 7. Interval inference and projected slots (§7.3.5, R-TEST-7)
 
+Implemented in `test/time_ticks_test.dart` (with section 6). The projected
+mark set after appending a bar that matches the projection is identical
+(TC-PROJ-10, R-TIME-30).
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-PROJ-01 | `inferModalIntervalSeconds` on daily trading data with weekends | Returns 86 400 (modal, not mean) | U | P0 |
-| TC-PROJ-02 | 1-minute data with missing bars | Returns 60 | U | P0 |
-| TC-PROJ-03 | 10-second and 30-second data | Returns 10 and 30 | U | P0 |
-| TC-PROJ-04 | Fewer than 2 points | Falls back to 1 day | U | P1 |
-| TC-PROJ-05 | Sample size limit | Only the trailing `sampleSize` deltas are used | U | P2 |
-| TC-PROJ-06 | `projectTimes` on daily data | Steps by a day and skips Saturday and Sunday | U | P0 |
-| TC-PROJ-07 | `projectTimes` on intraday data | Fixed-step, no weekend skipping | U | P0 |
-| TC-PROJ-08 | `projectTimes` with empty data | Daily steps from now, no exception (inject the clock to test) | U | P2 |
+| TC-PROJ-01 | ✅ `inferModalIntervalSeconds` on daily trading data with weekends | Returns 86 400 (modal, not mean) | U | P0 |
+| TC-PROJ-02 | ✅ 1-minute data with missing bars | Returns 60 | U | P0 |
+| TC-PROJ-03 | ✅ 10-second and 30-second data | Returns 10 and 30 | U | P0 |
+| TC-PROJ-04 | ✅ Fewer than 2 points | Falls back to 1 day | U | P1 |
+| TC-PROJ-05 | ✅ Sample size limit | Only the trailing `sampleSize` deltas are used | U | P2 |
+| TC-PROJ-06 | ✅ `projectTimes` on daily data | Steps by a day and skips Saturday and Sunday | U | P0 |
+| TC-PROJ-07 | ✅ `projectTimes` on intraday data | Fixed-step, no weekend skipping | U | P0 |
+| TC-PROJ-08 | ✅ `projectTimes` with empty data | Daily steps from now, no exception (inject the clock to test) | U | P2 |
 | TC-PROJ-09 | ✅ (fixed) Monthly series across Jan 31 → Feb 28 and a leap February (R-TIME-21) | Spec: calendar-correct. Current code: fixed-duration steps | U | P1 |
-| TC-PROJ-10 | Append a datum whose time equals the projected time (R-TIME-30) | Mark set is identical before and after | W | P1 |
+| TC-PROJ-10 | ✅ Append a datum whose time equals the projected time (R-TIME-30) | Mark set is identical before and after | W | P1 |
 
 ### 8. Layers (§8)
 
+Implemented in `test/layers_test.dart`. Bug found and fixed: the latest-point
+marker had no key, so its position in the layer's `Stack` shifted whenever the
+number of line segments changed (a pan, a zoom or an appended bar) and a
+stateful marker, such as a pulsing animation, was recreated each time. It is
+now keyed. A negative histogram value is clamped to nothing by the stack's
+constraints rather than throwing (TC-HIST-02b pins this). `GridLayer` also draws
+a vertical line at every visible time mark, which TC-GRID-01 covers.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-LAYER-01 | Layer order | Later layers draw on top of earlier ones | W, G | P0 |
-| TC-LAYER-02 | Only visible slots are built (R-PERF-2) | Number of child widgets per layer is O(visible slots), not O(data length) | W | P0 |
-| TC-LAYER-03 | Custom `ChartLayer` subclass | Receives size, context and data; its `extentFor` feeds autoscale | W | P1 |
-| TC-GRID-01 | `GridLayer` | One line per value tick, at `yOf(tick)`, in the configured colour | W, G | P1 |
-| TC-CANDLE-01 | Up vs down candles (`close >= open` is up) | `upColor` / `downColor`; `close == open` counts as up | W | P0 |
-| TC-CANDLE-02 | Body width | `max(minBodyWidth, slotExtent × bodyWidthRatio)`; a flat candle body is at least 1 px tall | W | P1 |
-| TC-CANDLE-03 | Slot extent < 2 px | Body collapses to a 1 px line | W | P2 |
-| TC-CANDLE-04 | Wick spans high to low | Pixel-correct | G | P1 |
-| TC-CANDLE-05 | Any OHLC value is NaN | Candle skipped; extent ignores it | W | P0 |
-| TC-CANDLE-06 | `onTap` / `onHover` | Tap reports the index; hover enter reports the index, exit reports `null` | W | P0 |
-| TC-HIST-01 | Bars scale to the local maximum within the visible range; strip height is `heightFraction` of the viewport | Tallest visible bar fills the strip | W | P0 |
-| TC-HIST-02 | All visible values ≤ 0 or NaN | Nothing drawn | W | P1 |
-| TC-HIST-03 | `onTap` / `onHover` | As TC-CANDLE-06 | W | P1 |
-| TC-LINE-01 | Segments between consecutive finite points | One segment per pair; correct start, length and angle | W | P0 |
-| TC-LINE-02 | NaN in the middle of the series (R-DATA-8) | Line breaks; no segment across the gap | W | P0 |
-| TC-LINE-03 | `fill: true` | Fill strips under the line in a 15 % alpha of the line colour | G | P2 |
-| TC-LINE-04 | Point hit targets | Built only when `onPointTap` or `onPointHover` is set; 12 px targets centred on points | W | P1 |
+| TC-LAYER-01 | ✅ Layer order | Later layers draw on top of earlier ones | W, G | P0 |
+| TC-LAYER-02 | ✅ Only visible slots are built (R-PERF-2) | Number of child widgets per layer is O(visible slots), not O(data length) | W | P0 |
+| TC-LAYER-03 | ✅ Custom `ChartLayer` subclass | Receives size, context and data; its `extentFor` feeds autoscale | W | P1 |
+| TC-GRID-01 | ✅ `GridLayer` | One line per value tick, at `yOf(tick)`, in the configured colour | W, G | P1 |
+| TC-CANDLE-01 | ✅ Up vs down candles (`close >= open` is up) | `upColor` / `downColor`; `close == open` counts as up | W | P0 |
+| TC-CANDLE-02 | ✅ Body width | `max(minBodyWidth, slotExtent × bodyWidthRatio)`; a flat candle body is at least 1 px tall | W | P1 |
+| TC-CANDLE-03 | ✅ Slot extent < 2 px | Body collapses to a 1 px line | W | P2 |
+| TC-CANDLE-04 | ✅ Wick spans high to low | Pixel-correct | G | P1 |
+| TC-CANDLE-05 | ✅ Any OHLC value is NaN | Candle skipped; extent ignores it | W | P0 |
+| TC-CANDLE-06 | ✅ `onTap` / `onHover` | Tap reports the index; hover enter reports the index, exit reports `null` | W | P0 |
+| TC-HIST-01 | ✅ Bars scale to the local maximum within the visible range; strip height is `heightFraction` of the viewport | Tallest visible bar fills the strip | W | P0 |
+| TC-HIST-02 | ✅ All visible values ≤ 0 or NaN | Nothing drawn | W | P1 |
+| TC-HIST-03 | ✅ `onTap` / `onHover` | As TC-CANDLE-06 | W | P1 |
+| TC-LINE-01 | ✅ Segments between consecutive finite points | One segment per pair; correct start, length and angle | W | P0 |
+| TC-LINE-02 | ✅ NaN in the middle of the series (R-DATA-8) | Line breaks; no segment across the gap | W | P0 |
+| TC-LINE-03 | ✅ `fill: true` | Fill strips under the line in a 15 % alpha of the line colour | G | P2 |
+| TC-LINE-04 | ✅ Point hit targets | Built only when `onPointTap` or `onPointHover` is set; 12 px targets centred on points | W | P1 |
 | TC-LINE-05 | ✅ `latestPointBuilder` with the last datum visible | Builder called with the last datum and index; marker rendered (`test/latest_point_test.dart`) | W | P0 |
-| TC-LINE-06 | `latestPointBuilder` with the last datum scrolled out of view | Builder not called; no marker | W | P0 |
-| TC-LINE-07 | `latestPointBuilder` when the last value is NaN | No marker | W | P1 |
-| TC-LINE-08 | Marker position | Marker centre equals `(xOf(last), yOf(value))` for odd and even marker sizes | W | P0 |
-| TC-LINE-09 | Marker ignores pointer events | Hover and drag over the marker behave as if it were not there | W | P0 |
-| TC-LINE-10 | Live tick moves the last value | Marker moves with it; a stateful marker (e.g. animation) keeps its state across ticks | W | P1 |
+| TC-LINE-06 | ✅ `latestPointBuilder` with the last datum scrolled out of view | Builder not called; no marker | W | P0 |
+| TC-LINE-07 | ✅ `latestPointBuilder` when the last value is NaN | No marker | W | P1 |
+| TC-LINE-08 | ✅ Marker position | Marker centre equals `(xOf(last), yOf(value))` for odd and even marker sizes | W | P0 |
+| TC-LINE-09 | ✅ Marker ignores pointer events | Hover and drag over the marker behave as if it were not there | W | P0 |
+| TC-LINE-10 | ✅ Live tick moves the last value | Marker moves with it; a stateful marker (e.g. animation) keeps its state across ticks | W | P1 |
 
 ### 9. Crosshair and readouts (§9)
 
+Implemented in `test/crosshair_test.dart` (TC-CROSS-06 is in
+`test/known_gaps_test.dart`). Bugs found and fixed:
+
+- The time badge showed only the date, so every intraday bar read the same.
+  It now shows the time of day too (seconds only when non-zero), and
+  `CrosshairLayer.timeFormatter` overrides it (R-TIME-16).
+- Badges were clipped by the viewport at its edges. They are now pulled back
+  inside it.
+- Touch tap and long press only registered over a drawn element, because the
+  recogniser used the default hit behaviour, and a long press showed nothing
+  until the finger moved. Touch is now handled with raw pointer events (a
+  timer plus a slop check) instead of gesture recognisers. A recogniser hit
+  everywhere joins every touch's gesture arena and delays pan and pinch by a
+  touch slop, so this keeps both exact. Pan and zoom updates are ignored while
+  the crosshair is being dragged. A one-finger drag also starts from the
+  pointer-down position, and vertical value panning is applied cumulatively,
+  so neither loses the slop distance.
+
+TC-CROSS-09: the `index < 0` branch is unreachable through the viewport (the
+scroll offset is never negative), so the test pins that the first pixel
+highlights slot 0.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-CROSS-01 | Mouse hover over a real slot | Vertical and horizontal lines, value badge (2 decimals), time badge | W | P0 |
-| TC-CROSS-02 | Mouse exit | Crosshair cleared | W | P0 |
-| TC-CROSS-03 | Long-press drag on touch | Crosshair follows; cleared on release | W | P0 |
-| TC-CROSS-04 | Tap | Crosshair placed at the tapped slot | W | P1 |
-| TC-CROSS-05 | Hover over a projected slot (R-TIME-29) | Time badge only, using the projected time; no value line or badge | W | P0 |
+| TC-CROSS-01 | ✅ Mouse hover over a real slot | Vertical and horizontal lines, value badge (2 decimals), time badge | W | P0 |
+| TC-CROSS-02 | ✅ Mouse exit | Crosshair cleared | W | P0 |
+| TC-CROSS-03 | ✅ Long-press drag on touch | Crosshair follows; cleared on release | W | P0 |
+| TC-CROSS-04 | ✅ Tap | Crosshair placed at the tapped slot | W | P1 |
+| TC-CROSS-05 | ✅ Hover over a projected slot (R-TIME-29) | Time badge only, using the projected time; no value line or badge | W | P0 |
 | TC-CROSS-06 | ✅ (fixed) `onIndexHighlighted` over a projected slot | Spec: reports `null`. Current code reports the raw projected index | W | P1 |
-| TC-CROSS-07 | `crosshairEnabled: false` | No crosshair on hover, tap or long-press | W | P0 |
-| TC-CROSS-08 | `CrosshairLayer` without `valueOf` / `timeOf` | Missing badges are omitted; no exception | W | P1 |
-| TC-CROSS-09 | Hover left of the first slot | Highlight cleared | W | P2 |
-| TC-CROSS-10 | Badges near viewport edges | Badges are not clipped | W, G | P1 |
+| TC-CROSS-07 | ✅ `crosshairEnabled: false` | No crosshair on hover, tap or long-press | W | P0 |
+| TC-CROSS-08 | ✅ `CrosshairLayer` without `valueOf` / `timeOf` | Missing badges are omitted; no exception | W | P1 |
+| TC-CROSS-09 | ✅ Hover left of the first slot | Highlight cleared | W | P2 |
+| TC-CROSS-10 | ✅ Badges near viewport edges | Badges are not clipped | W, G | P1 |
 
 ### 10. Controller and callbacks (§10)
 
+Implemented in `test/controller_test.dart` (TC-CTRL-05 is in
+`test/jump_to_latest_test.dart`). Bug found and fixed: a controller was never
+detached when the chart replaced it or was disposed, so a swapped-out
+controller kept receiving the chart's events, and a controller used after its
+chart was gone was left attached to a disposed context. Charts now call the new
+`InteractiveChartController.detach`. TC-CB-03 pins that data and size changes
+do not call `onVisibleRangeChanged`.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-CTRL-01 | Getters before attach | `visibleRange == (0, 0)`, `slotExtent == 0`, `autoscale == true`, `highlightedIndex == null`; methods are no-ops | U | P0 |
-| TC-CTRL-02 | Listener notifications | Controller notifies on pan, zoom, highlight and autoscale changes | W | P0 |
-| TC-CTRL-03 | `setAutoscale(false/true)` | Reflected in `autoscale`; the y extent behaves accordingly | W | P0 |
-| TC-CTRL-04 | `jumpToLatest()` | Scrolls to the newest datum; slot extent unchanged | W | P0 |
+| TC-CTRL-01 | ✅ Getters before attach | `visibleRange == (0, 0)`, `slotExtent == 0`, `autoscale == true`, `highlightedIndex == null`; methods are no-ops | U | P0 |
+| TC-CTRL-02 | ✅ Listener notifications | Controller notifies on pan, zoom, highlight and autoscale changes | W | P0 |
+| TC-CTRL-03 | ✅ `setAutoscale(false/true)` | Reflected in `autoscale`; the y extent behaves accordingly | W | P0 |
+| TC-CTRL-04 | ✅ `jumpToLatest()` | Scrolls to the newest datum; slot extent unchanged | W | P0 |
 | TC-CTRL-05 | ✅ `jumpToLatest(slotExtent: 8)` after zooming | Slot extent 8, view ends at the newest datum (`test/jump_to_latest_test.dart`) | W | P0 |
-| TC-CTRL-06 | `jumpToLatest(slotExtent:)` with a value outside min/max | Clamped | W | P1 |
-| TC-CTRL-07 | `clearHighlight()` | Crosshair removed | W | P1 |
-| TC-CTRL-08 | Swap the controller instance on the widget | Old one detached, new one attached; no events delivered to the old one | W | P0 |
-| TC-CTRL-09 | No controller passed | An internal one is created and disposed with the widget | W | P1 |
-| TC-CTRL-10 | Dispose the controller | Listener removed from the context; no leaks (`LeakTracker`) | W | P1 |
-| TC-CB-01 | `onVisibleRangeChanged` on first layout | Called exactly once after the first frame with the initial range | W | P0 |
-| TC-CB-02 | `onVisibleRangeChanged` on pan and zoom | Called with the new range | W | P0 |
-| TC-CB-03 | Data updates without user input | Behaviour is defined and documented (today: no call from `setSlotCount`) | W | P1 |
-| TC-CB-04 | `onIndexHighlighted` | Called with the index on hover and `null` on exit | W | P0 |
+| TC-CTRL-06 | ✅ `jumpToLatest(slotExtent:)` with a value outside min/max | Clamped | W | P1 |
+| TC-CTRL-07 | ✅ `clearHighlight()` | Crosshair removed | W | P1 |
+| TC-CTRL-08 | ✅ Swap the controller instance on the widget | Old one detached, new one attached; no events delivered to the old one | W | P0 |
+| TC-CTRL-09 | ✅ No controller passed | An internal one is created and disposed with the widget | W | P1 |
+| TC-CTRL-10 | ✅ Dispose the controller | Listener removed from the context; no leaks (`LeakTracker`) | W | P1 |
+| TC-CB-01 | ✅ `onVisibleRangeChanged` on first layout | Called exactly once after the first frame with the initial range | W | P0 |
+| TC-CB-02 | ✅ `onVisibleRangeChanged` on pan and zoom | Called with the new range | W | P0 |
+| TC-CB-03 | ✅ Data updates without user input | Behaviour is defined and documented (today: no call from `setSlotCount`) | W | P1 |
+| TC-CB-04 | ✅ `onIndexHighlighted` | Called with the index on hover and `null` on exit | W | P0 |
 
 ### 11. Paging integration (§4.4, R-TEST-8)
+
+Implemented in `test/paging_test.dart`, driving a `PagingHost`
+(`test/support/hosts.dart`) that implements the documented pattern. Bug found
+and fixed: when a page was prepended in the middle of a drag, the gesture's
+stored start position was in absolute content pixels, so the next update
+snapped the view back by exactly the prepended width (120 slots at 8 px is
+960 px). The reference is now shifted along with the data (TC-PAGE-07). The
+chart has no fling inertia, so "mid-fling" is tested as a held, moving drag.
 
 The library has no paging API yet, so these cases test the documented
 pattern: a caller drives loading from `onVisibleRangeChanged`. Write them
@@ -513,26 +591,33 @@ the library when a paging API exists.
 
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-PAGE-01 | Pan into the threshold zone | Exactly one load request | W | P0 |
-| TC-PAGE-02 | Dwell or keep panning in the zone while a request is in flight (R-PAGE-7) | No second request | W | P0 |
-| TC-PAGE-03 | Regression: page lands while the view is at the left edge | View shifts by the page size and no further request fires without user input (no cascade) | W | P0 |
-| TC-PAGE-04 | Exhausted latch (R-PAGE-8) | No request after the source reports exhausted | W | P0 |
-| TC-PAGE-05 | Page too small to clear the threshold (R-PAGE-9) | Requests stop at a defined cap | W | P1 |
-| TC-PAGE-06 | Widget disposed while a request is in flight (R-PAGE-11) | Result discarded; no `setState` after dispose | W | P0 |
-| TC-PAGE-07 | Prepend during an active fling (R-PAGE-13) | Fling neither jumps nor stops | W | P1 |
-| TC-PAGE-08 | Prepend outside the visible range (R-PAGE-19) | Value extent and on-screen tick marks unchanged | W | P0 |
-| TC-PAGE-09 | Live append arrives while a page is loading | Both applied; view stable; order of data correct | W | P0 |
-| TC-PAGE-10 | Opened at `ChartAnchor.left` | Initial announce triggers at most one load (documented deviation from R-PAGE-4) | W | P1 |
+| TC-PAGE-01 | ✅ Pan into the threshold zone | Exactly one load request | W | P0 |
+| TC-PAGE-02 | ✅ Dwell or keep panning in the zone while a request is in flight (R-PAGE-7) | No second request | W | P0 |
+| TC-PAGE-03 | ✅ Regression: page lands while the view is at the left edge | View shifts by the page size and no further request fires without user input (no cascade) | W | P0 |
+| TC-PAGE-04 | ✅ Exhausted latch (R-PAGE-8) | No request after the source reports exhausted | W | P0 |
+| TC-PAGE-05 | ✅ Page too small to clear the threshold (R-PAGE-9) | Requests stop at a defined cap | W | P1 |
+| TC-PAGE-06 | ✅ Widget disposed while a request is in flight (R-PAGE-11) | Result discarded; no `setState` after dispose | W | P0 |
+| TC-PAGE-07 | ✅ Prepend during an active fling (R-PAGE-13) | Fling neither jumps nor stops | W | P1 |
+| TC-PAGE-08 | ✅ Prepend outside the visible range (R-PAGE-19) | Value extent and on-screen tick marks unchanged | W | P0 |
+| TC-PAGE-09 | ✅ Live append arrives while a page is loading | Both applied; view stable; order of data correct | W | P0 |
+| TC-PAGE-10 | ✅ Opened at `ChartAnchor.left` | Initial announce triggers at most one load (documented deviation from R-PAGE-4) | W | P1 |
 
 ### 12. Live data
 
+Implemented in `test/live_data_test.dart`, with a `LiveHost` that ticks once a
+second on a fake clock (ten-second bars, the last bar updated in place, a new
+bar at each boundary). TC-LIVE-05 runs 3 600 ticks and checks that the cost of
+the last 300 ticks stays close to the first 300 (it measures time only, not
+memory; it uses generous bounds because wall-clock timing is noisy). The
+tests also found the empty-space drag bug listed under section 14.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-LIVE-01 | One-second ticks updating the last bar for 60 s (fake clock) | Last bar updates each tick; viewport stable; no exceptions | W | P0 |
-| TC-LIVE-02 | Bar rollover at a 10-second boundary | New bar appended; projected slots continue at 10 s cadence | W | P0 |
-| TC-LIVE-03 | Ticks while the user is mid-drag or mid-pinch | Gesture continues without a jump | W | P0 |
-| TC-LIVE-04 | Ticks while the crosshair is shown | Crosshair stays on the same index; readout updates if it is the last bar | W | P1 |
-| TC-LIVE-05 | One hour of ticks (3 600 updates) | Frame time and memory stay flat | P | P1 |
+| TC-LIVE-01 | ✅ One-second ticks updating the last bar for 60 s (fake clock) | Last bar updates each tick; viewport stable; no exceptions | W | P0 |
+| TC-LIVE-02 | ✅ Bar rollover at a 10-second boundary | New bar appended; projected slots continue at 10 s cadence | W | P0 |
+| TC-LIVE-03 | ✅ Ticks while the user is mid-drag or mid-pinch | Gesture continues without a jump | W | P0 |
+| TC-LIVE-04 | ✅ Ticks while the crosshair is shown | Crosshair stays on the same index; readout updates if it is the last bar | W | P1 |
+| TC-LIVE-05 | ✅ One hour of ticks (3 600 updates) | Frame time and memory stay flat | P | P1 |
 
 ### 13. Web scroll guard
 
@@ -549,16 +634,42 @@ the library when a paging API exists.
 
 ### 14. Lifecycle and robustness
 
+Implemented in `test/lifecycle_test.dart`. Bugs found and fixed:
+
+- **A drag that began before unmount used the disposed context.** The pointer-up
+  is still routed to the removed `Listener`, and the touch handler then called
+  into the disposed state. Pointer handlers now ignore events once unmounted.
+- **Pan and zoom did nothing on empty space when the crosshair was off.** The
+  pan/zoom `GestureDetector` deferred to its children, and the crosshair's
+  mouse region (always hit) had been hiding it. It is now opaque, so a drag or
+  pinch works anywhere in the viewport.
+- **A tiny chart overflowed.** An axis bigger than the chart (a 1 x 1 chart, or
+  one animating up from zero) threw `RenderFlex overflowed`. Axes are now only
+  laid out when there is room for them and a viewport.
+- **Unbounded constraints** (a chart in a `Column` or a horizontal `ListView`)
+  gave an obscure layout error. In debug mode it is now a clear message that
+  asks for a bounded width and height.
+- **Tiny and huge value scales.** Value labels always had two decimals, so a
+  range around 1e-8 printed every tick as `0.00`. The default format now
+  shows as many decimals as the tick step needs (never fewer than two), on the
+  axis and in the crosshair badge (`valueDecimals`).
+
+`initialAnchor`, `initialSlotExtent`, `minSlotExtent` and `maxSlotExtent` are
+read once; this is now documented on the fields and pinned by TC-LIFE-04.
+TC-LIFE-08 does not use `leak_tracker`; it checks over 25 mount/unmount cycles
+that the controller is detached, the context is disposed and no timer or
+ticker is left running (the test framework fails on any left pending).
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-LIFE-01 | Dispose mid-gesture, mid-animation and with a pending post-frame callback | No exceptions; no `setState` after dispose | W | P0 |
-| TC-LIFE-02 | Change the `layers` list (add, remove, swap type) between builds | Renders the new set; autoscale recomputed | W | P0 |
-| TC-LIFE-03 | Change `valueAxis` / `timeAxis` from present to `null` and back at runtime | Layout updates without exceptions | W | P0 |
-| TC-LIFE-04 | Change `initialAnchor` / `initialSlotExtent` after mount | Ignored (initial-only); documented | W | P1 |
-| TC-LIFE-05 | Zero-size and unbounded constraints | Zero size renders nothing; unbounded gives a clear assertion message | W | P1 |
-| TC-LIFE-06 | Theme change (light ↔ dark) | Colours from caller-provided config update; state kept | W | P1 |
-| TC-LIFE-07 | Very large values (1e12) and very small (1e-8) | Labels format; no overflow or precision collapse in scales | U | P1 |
-| TC-LIFE-08 | Memory leak check over mount/unmount cycles | No leaked controllers, listeners or tickers (`leak_tracker`) | W | P1 |
+| TC-LIFE-01 | ✅ Dispose mid-gesture, mid-animation and with a pending post-frame callback | No exceptions; no `setState` after dispose | W | P0 |
+| TC-LIFE-02 | ✅ Change the `layers` list (add, remove, swap type) between builds | Renders the new set; autoscale recomputed | W | P0 |
+| TC-LIFE-03 | ✅ Change `valueAxis` / `timeAxis` from present to `null` and back at runtime | Layout updates without exceptions | W | P0 |
+| TC-LIFE-04 | ✅ Change `initialAnchor` / `initialSlotExtent` after mount | Ignored (initial-only); documented | W | P1 |
+| TC-LIFE-05 | ✅ Zero-size and unbounded constraints | Zero size renders nothing; unbounded gives a clear assertion message | W | P1 |
+| TC-LIFE-06 | ✅ Theme change (light ↔ dark) | Colours from caller-provided config update; state kept | W | P1 |
+| TC-LIFE-07 | ✅ Very large values (1e12) and very small (1e-8) | Labels format; no overflow or precision collapse in scales | U | P1 |
+| TC-LIFE-08 | ✅ Memory leak check over mount/unmount cycles | No leaked controllers, listeners or tickers (`leak_tracker`) | W | P1 |
 
 ### 15. Performance (§11)
 

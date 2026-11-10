@@ -38,6 +38,7 @@ class ChartHarness<T> {
     this.slotExtent = 8,
     this.minSlotExtent = 1,
     this.maxSlotExtent = 64,
+    this.textScale = 1,
     this.panEnabled = true,
     this.zoomEnabled = true,
     this.crosshairEnabled = true,
@@ -50,6 +51,7 @@ class ChartHarness<T> {
   final ChartAnchor anchor;
   final double slotExtent;
   final double minSlotExtent;
+  final double textScale;
   final bool panEnabled;
   final bool zoomEnabled;
   final bool crosshairEnabled;
@@ -62,6 +64,12 @@ class ChartHarness<T> {
 
   Widget app(List<T> data, {double width = 800, double height = 400}) =>
       MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
         home: Center(
           child: SizedBox(
             width: width,

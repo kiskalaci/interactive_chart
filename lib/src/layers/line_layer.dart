@@ -139,6 +139,10 @@ class LineLayer<T> extends ChartLayer<T> {
       return null;
     }
     return Positioned(
+      // Keyed so the marker keeps its element (and any State, such as a
+      // running animation) when the number of segments before it in the
+      // stack changes on a pan, zoom or appended bar.
+      key: const ValueKey("interactive_chart.latestPointMarker"),
       left: ctx.xOf(last),
       top: ctx.yOf(v),
       child: IgnorePointer(

@@ -1,3 +1,4 @@
+import "dart:async";
 import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
@@ -49,8 +50,18 @@ class InteractiveChart<T> extends StatefulWidget {
   final List<T> data;
   final DateTime Function(T datum) timeOf;
   final List<ChartLayer<T>> layers;
+
+  /// Where the chart opens. Read once when the chart is first laid out;
+  /// changing it later does not move the view.
   final ChartAnchor initialAnchor;
+
+  /// The zoom the chart opens at. Read once; changing it later does not
+  /// re-zoom. Use [InteractiveChartController.jumpToLatest] with `slotExtent`
+  /// to reset zoom programmatically.
   final double initialSlotExtent;
+
+  /// The zoom limits. Read once when the chart is created; changing them
+  /// later has no effect.
   final double minSlotExtent;
   final double maxSlotExtent;
 
@@ -75,7 +86,15 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   InteractiveChartController? _ownedController;
 
   double _valueAxisWidth = 56;
-  static const double _timeAxisHeight = 22;
+  static const double _timeAxisBaseHeight = 22;
+
+  /// Set at the start of each build so the axis measurements honour the
+  /// user's text scale.
+  TextScaler _textScaler = TextScaler.noScaling;
+
+  /// The time axis grows with the text scale (never below its base height).
+  double get _timeAxisHeight =>
+      _timeAxisBaseHeight * math.max(1.0, _textScaler.scale(1));
 
   int? _lastAutoscaleStart;
   int? _lastAutoscaleEnd;
@@ -97,6 +116,17 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   double? _gestureStartSlotExtent;
   double? _gestureStartContentPixelAtFocal;
   double? _gestureStartFocalX;
+
+  /// Viewport x of the most recent pointer-down. A one-finger drag starts
+  /// from here rather than from where Flutter's slop ends, so the chart
+  /// follows the finger from the first pixel.
+  double? _lastPointerDownX;
+  double? _lastPointerDownY;
+
+  /// Where the current gesture started vertically, and how much vertical
+  /// movement has already been applied to the value extent.
+  double? _gestureStartFocalY;
+  double _appliedDy = 0;
 
   final _viewportKey = GlobalKey();
   late final ScrollGuard _scrollGuard;
@@ -141,12 +171,20 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     _autoscaleDirty = true;
     if (widget.data.length != oldWidget.data.length) {
       // R-DATA-9: appending/changing data must not reset pan/zoom.
-      ctx.setSlotCount(
-        widget.data.length,
-        prepended: _prependedCount(oldWidget.data, widget.data),
-      );
+      final prepended = _prependedCount(oldWidget.data, widget.data);
+      ctx.setSlotCount(widget.data.length, prepended: prepended);
+      final startExtent = _gestureStartSlotExtent;
+      final startPixel = _gestureStartContentPixelAtFocal;
+      if (prepended > 0 && startExtent != null && startPixel != null) {
+        // A gesture in progress measures from the content pixel under its
+        // start focal point. Older data moved that pixel right by the
+        // prepended width, so move the reference too, or the next update
+        // would snap the view back by that amount.
+        _gestureStartContentPixelAtFocal = startPixel + prepended * startExtent;
+      }
     }
     if (widget.controller != oldWidget.controller) {
+      oldWidget.controller?.detach(ctx);
       _ownedController?.dispose();
       _ownedController = null;
       _attachController();
@@ -192,6 +230,8 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   @override
   void dispose() {
+    _longPressTimer?.cancel();
+    widget.controller?.detach(ctx);
     ctx.removeListener(_onContextChanged);
     _ownedController?.dispose();
     ctx.dispose();
@@ -285,7 +325,11 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     if (widget.valueAxis == null) {
       return;
     }
-    final measured = measureValueAxisWidth(ctx, widget.valueAxis!);
+    final measured = measureValueAxisWidth(
+      ctx,
+      widget.valueAxis!,
+      textScaler: _textScaler,
+    );
     if (measured > _valueAxisWidth) {
       // Grow-only (R-AXIS-5); scheduled post-frame since this mutates state
       // read during the layout pass currently in progress.
@@ -301,12 +345,21 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   void _onScaleStart(ScaleStartDetails details) {
     _gestureStartSlotExtent = ctx.slotExtent;
-    final focalX = details.localFocalPoint.dx;
+    final focalX = details.pointerCount == 1 && _lastPointerDownX != null
+        ? _lastPointerDownX!
+        : details.localFocalPoint.dx;
     _gestureStartFocalX = focalX;
+    _gestureStartFocalY = details.pointerCount == 1 && _lastPointerDownY != null
+        ? _lastPointerDownY!
+        : details.localFocalPoint.dy;
+    _appliedDy = 0;
     _gestureStartContentPixelAtFocal = ctx.scrollOffset + focalX;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_crosshairActive) {
+      return; // the finger is dragging the crosshair, not the chart
+    }
     final startExtent = _gestureStartSlotExtent;
     final startContentPixel = _gestureStartContentPixelAtFocal;
     if (startExtent == null || startContentPixel == null) {
@@ -333,13 +386,20 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     ctx.setSlotExtentAndScroll(newSlotExtent, newScrollOffset);
 
     if (widget.panEnabled) {
-      ctx.panValueByPixels(details.focalPointDelta.dy);
+      // Cumulative from the gesture's start, so the slop distance travelled
+      // before the gesture was recognised is applied too.
+      final total =
+          details.localFocalPoint.dy -
+          (_gestureStartFocalY ?? details.localFocalPoint.dy);
+      ctx.panValueByPixels(total - _appliedDy);
+      _appliedDy = total;
     }
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
     _gestureStartSlotExtent = null;
     _gestureStartFocalX = null;
+    _gestureStartFocalY = null;
     _gestureStartContentPixelAtFocal = null;
   }
 
@@ -367,6 +427,98 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
       // Zoom disabled, or a horizontal-dominant scroll: pan instead, falling
       // back to `dy` for mice with no horizontal scroll axis.
       ctx.panBy(dx != 0 ? dx : dy);
+    }
+  }
+
+  // --- touch crosshair ---------------------------------------------------
+  //
+  // A tap places the crosshair; a long press shows it and then follows the
+  // finger until release. This uses raw pointer events rather than gesture
+  // recognisers on purpose: a recogniser that is hit everywhere joins every
+  // touch's gesture arena and delays pan and pinch recognition by a touch
+  // slop. While the crosshair is being dragged, pan and zoom updates are
+  // ignored instead.
+
+  Timer? _longPressTimer;
+  int? _touchPointer;
+  Offset? _touchDownPosition;
+  Duration? _touchDownTime;
+  bool _crosshairActive = false;
+
+  void _onTouchDown(PointerDownEvent event) {
+    if (!mounted) {
+      return; // a gesture that began before this chart was removed
+    }
+    if (!widget.crosshairEnabled || event.kind == PointerDeviceKind.mouse) {
+      return;
+    }
+    if (_touchPointer != null) {
+      // A second finger: this is a pinch, not a crosshair gesture.
+      _endTouchCrosshair(clear: true);
+      return;
+    }
+    _touchPointer = event.pointer;
+    _touchDownPosition = event.localPosition;
+    _touchDownTime = event.timeStamp;
+    _longPressTimer = Timer(kLongPressTimeout, () {
+      final at = _touchDownPosition;
+      if (at != null && mounted) {
+        _crosshairActive = true;
+        _updateHighlight(at);
+      }
+    });
+  }
+
+  void _onTouchMove(PointerMoveEvent event) {
+    if (!mounted) {
+      return; // a gesture that began before this chart was removed
+    }
+    if (event.pointer != _touchPointer) {
+      return;
+    }
+    if (_crosshairActive) {
+      _updateHighlight(event.localPosition);
+    } else if ((event.localPosition - _touchDownPosition!).distance >
+        kTouchSlop) {
+      _longPressTimer?.cancel(); // it is a drag, not a long press
+    }
+  }
+
+  void _onTouchUp(PointerUpEvent event) {
+    if (!mounted) {
+      return; // a gesture that began before this chart was removed
+    }
+    if (event.pointer != _touchPointer) {
+      return;
+    }
+    final wasActive = _crosshairActive;
+    final moved =
+        (event.localPosition - _touchDownPosition!).distance > kTouchSlop;
+    final quick = event.timeStamp - _touchDownTime! < kLongPressTimeout;
+    _endTouchCrosshair(clear: wasActive);
+    if (!wasActive && !moved && quick) {
+      _updateHighlight(event.localPosition); // a tap
+    }
+  }
+
+  void _onTouchCancel(PointerCancelEvent event) {
+    if (!mounted) {
+      return; // a gesture that began before this chart was removed
+    }
+    if (event.pointer == _touchPointer) {
+      _endTouchCrosshair(clear: _crosshairActive);
+    }
+  }
+
+  void _endTouchCrosshair({required bool clear}) {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    _touchPointer = null;
+    _touchDownPosition = null;
+    _touchDownTime = null;
+    _crosshairActive = false;
+    if (clear) {
+      _clearHighlight();
     }
   }
 
@@ -484,8 +636,32 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final valueAxisWidth = widget.valueAxis != null ? _valueAxisWidth : 0.0;
-      final timeAxisHeight = widget.timeAxis != null ? _timeAxisHeight : 0.0;
+      assert(() {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+          throw FlutterError.fromParts([
+            ErrorSummary("InteractiveChart was given unbounded constraints."),
+            ErrorDescription(
+              "It fills the space it is given, so it needs a bounded width "
+              "and height, but it received $constraints.",
+            ),
+            ErrorHint(
+              "Wrap it in a SizedBox, Expanded, Flexible or AspectRatio, or "
+              "give its scrollable parent a fixed extent.",
+            ),
+          ]);
+        }
+        return true;
+      }());
+      _textScaler = MediaQuery.textScalerOf(context);
+      // An axis is only laid out when the chart is big enough to hold it and
+      // still leave a viewport; in a tiny (or animating-from-zero) chart it
+      // is dropped rather than overflowing.
+      final showValueAxis =
+          widget.valueAxis != null && constraints.maxWidth > _valueAxisWidth;
+      final showTimeAxis =
+          widget.timeAxis != null && constraints.maxHeight > _timeAxisHeight;
+      final valueAxisWidth = showValueAxis ? _valueAxisWidth : 0.0;
+      final timeAxisHeight = showTimeAxis ? _timeAxisHeight : 0.0;
       final viewportWidth = math.max(
         0.0,
         constraints.maxWidth - valueAxisWidth,
@@ -505,7 +681,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
         child: ClipRect(child: _buildLayers(viewportWidth, viewportHeight)),
       );
 
-      final valueAxisWidget = widget.valueAxis == null
+      final valueAxisWidget = !showValueAxis
           ? null
           : SizedBox(
               width: _valueAxisWidth,
@@ -515,7 +691,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
               ),
             );
 
-      final timeAxisWidget = widget.timeAxis == null
+      final timeAxisWidget = !showTimeAxis
           ? null
           : SizedBox(
               height: _timeAxisHeight,
@@ -575,19 +751,28 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
       stack = MouseRegion(
         onHover: (event) => _updateHighlight(event.localPosition),
         onExit: (_) => _clearHighlight(),
-        child: GestureDetector(
-          onLongPressMoveUpdate: (details) =>
-              _updateHighlight(details.localPosition),
-          onLongPressEnd: (_) => _clearHighlight(),
-          onTapUp: (details) => _updateHighlight(details.localPosition),
-          child: stack,
-        ),
+        child: stack,
       );
     }
 
     return Listener(
       onPointerSignal: _onPointerSignal,
+      onPointerDown: (event) {
+        if (!mounted) {
+          return;
+        }
+        _lastPointerDownX = event.localPosition.dx;
+        _lastPointerDownY = event.localPosition.dy;
+        _onTouchDown(event);
+      },
+      onPointerMove: _onTouchMove,
+      onPointerUp: _onTouchUp,
+      onPointerCancel: _onTouchCancel,
       child: GestureDetector(
+        // Opaque so pan and zoom work anywhere in the viewport. The default
+        // defers to the children, which left empty space dead whenever the
+        // crosshair's mouse region (itself always hit) was not present.
+        behavior: HitTestBehavior.opaque,
         onScaleStart: (widget.panEnabled || widget.zoomEnabled)
             ? _onScaleStart
             : null,

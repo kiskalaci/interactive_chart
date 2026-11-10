@@ -48,6 +48,7 @@ class TimeAxisView extends StatelessWidget {
         final painter = TextPainter(
           text: TextSpan(text: text, style: style),
           textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(context),
         )..layout();
 
         final left = x - painter.width / 2;
