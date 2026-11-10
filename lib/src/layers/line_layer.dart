@@ -23,6 +23,7 @@ class LineLayer<T> extends ChartLayer<T> {
     this.contributesToExtent = true,
     this.onPointTap,
     this.onPointHover,
+    this.latestPointBuilder,
   });
 
   final double Function(T datum) valueOf;
@@ -36,6 +37,13 @@ class LineLayer<T> extends ChartLayer<T> {
 
   /// Fires with the hovered point's index on enter, and `null` on exit.
   final void Function(int? index)? onPointHover;
+
+  /// Optional marker for the series' latest point (the last datum), centred
+  /// on it — e.g. a pulsing "live" dot. Only built while that point is
+  /// within the visible range and has a finite value. The marker ignores
+  /// pointer events.
+  final Widget Function(BuildContext context, T datum, int index)?
+  latestPointBuilder;
 
   @override
   ValueRange? extentFor(List<T> data, int start, int end) {
@@ -115,7 +123,33 @@ class LineLayer<T> extends ChartLayer<T> {
       }
     }
 
-    return Stack(children: [...fills, ...segments, ...points]);
+    final marker = _latestPointMarker(ctx, data);
+
+    return Stack(children: [...fills, ...segments, ...points, ?marker]);
+  }
+
+  Widget? _latestPointMarker(InteractiveChartContext ctx, List<T> data) {
+    final builder = latestPointBuilder;
+    final last = data.length - 1;
+    if (builder == null || last < ctx.visibleStart || last >= ctx.visibleEnd) {
+      return null;
+    }
+    final v = valueOf(data[last]);
+    if (v.isNaN || v.isInfinite) {
+      return null;
+    }
+    return Positioned(
+      left: ctx.xOf(last),
+      top: ctx.yOf(v),
+      child: IgnorePointer(
+        child: FractionalTranslation(
+          translation: const Offset(-0.5, -0.5),
+          child: Builder(
+            builder: (context) => builder(context, data[last], last),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _segment(Offset a, Offset b) {

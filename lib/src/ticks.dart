@@ -39,8 +39,18 @@ int timeWeight(DateTime previous, DateTime current) {
 }
 
 const _monthNames = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 /// Weight -> label (R-TIME-12/13): format is chosen by the mark's weight,
@@ -108,23 +118,30 @@ List<TickMark> buildTickMarks({
 
   return [
     for (final i in accepted)
-      TickMark(index: i, time: times[i], weight: weights[i], projected: i >= realCount),
+      TickMark(
+        index: i,
+        time: times[i],
+        weight: weights[i],
+        projected: i >= realCount,
+      ),
   ];
 }
 
 /// Modal-delta interval inference (R-TIME-20) over the trailing [sampleSize]
-/// deltas between real timestamps.
-int inferModalIntervalMinutes(List<DateTime> real, {int sampleSize = 100}) {
+/// deltas between real timestamps, in seconds so sub-minute bars work.
+int inferModalIntervalSeconds(List<DateTime> real, {int sampleSize = 100}) {
   if (real.length < 2) {
-    return 24 * 60;
+    return 24 * 60 * 60;
   }
   final n = math.min(sampleSize, real.length - 1);
   final counts = <int, int>{};
   for (var i = real.length - n; i < real.length; i++) {
-    final minutes = real[i].difference(real[i - 1]).inMinutes;
+    final minutes = real[i].difference(real[i - 1]).inSeconds;
     counts[minutes] = (counts[minutes] ?? 0) + 1;
   }
-  return (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
+  return (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+      .first
+      .key;
 }
 
 /// Projects [count] time points past the end of [real], stepped
@@ -132,7 +149,12 @@ int inferModalIntervalMinutes(List<DateTime> real, {int sampleSize = 100}) {
 /// (R-TIME-21/22, simplified: exact for minute/hour/day cadences, not
 /// calendar-month arithmetic). Computes the modal interval once, so this is
 /// O(sampleSize + count) rather than O(count * sampleSize).
-List<DateTime> projectTimes(List<DateTime> real, int count, {int sampleSize = 100, bool skipWeekends = true}) {
+List<DateTime> projectTimes(
+  List<DateTime> real,
+  int count, {
+  int sampleSize = 100,
+  bool skipWeekends = true,
+}) {
   if (count <= 0) {
     return const [];
   }
@@ -141,13 +163,13 @@ List<DateTime> projectTimes(List<DateTime> real, int count, {int sampleSize = 10
     return [for (var i = 0; i < count; i++) now.add(Duration(days: i + 1))];
   }
 
-  final modalMinutes = inferModalIntervalMinutes(real, sampleSize: sampleSize);
-  final isDailyPlus = modalMinutes >= 24 * 60;
+  final modalSeconds = inferModalIntervalSeconds(real, sampleSize: sampleSize);
+  final isDailyPlus = modalSeconds >= 24 * 60 * 60;
 
   var t = real.last;
   final result = <DateTime>[];
   for (var i = 0; i < count; i++) {
-    t = t.add(Duration(minutes: modalMinutes));
+    t = t.add(Duration(seconds: modalSeconds));
     if (isDailyPlus && skipWeekends) {
       while (t.weekday == DateTime.saturday || t.weekday == DateTime.sunday) {
         t = t.add(const Duration(days: 1));
@@ -160,8 +182,17 @@ List<DateTime> projectTimes(List<DateTime> real, int count, {int sampleSize = 10
 
 /// Single-slot convenience matching the `DateTime Function(int)` projector
 /// shape from R-TIME-19's public API sketch.
-DateTime projectTime(List<DateTime> real, int slotsAfterLast, {int sampleSize = 100, bool skipWeekends = true}) =>
-    projectTimes(real, slotsAfterLast, sampleSize: sampleSize, skipWeekends: skipWeekends).last;
+DateTime projectTime(
+  List<DateTime> real,
+  int slotsAfterLast, {
+  int sampleSize = 100,
+  bool skipWeekends = true,
+}) => projectTimes(
+  real,
+  slotsAfterLast,
+  sampleSize: sampleSize,
+  skipWeekends: skipWeekends,
+).last;
 
 /// "Nice" step value-axis ticks (R-AXIS-8: 1/2/2.5/5/10 progression).
 List<double> niceValueTicks(double min, double max, {int targetCount = 5}) {
@@ -169,7 +200,9 @@ List<double> niceValueTicks(double min, double max, {int targetCount = 5}) {
   final hi = min == max ? max + 1 : max;
   final range = hi - lo;
   final rawStep = range / targetCount;
-  final magnitude = math.pow(10, (math.log(rawStep) / math.ln10).floor()).toDouble();
+  final magnitude = math
+      .pow(10, (math.log(rawStep) / math.ln10).floor())
+      .toDouble();
   final residual = rawStep / magnitude;
   double niceResidual;
   if (residual > 5) {

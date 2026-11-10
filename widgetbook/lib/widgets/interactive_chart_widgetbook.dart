@@ -2,14 +2,21 @@ import "dart:async";
 import "dart:math" as math;
 
 import "package:flutter/material.dart";
-import "package:interactive_chart_widgetbook/color_palette.dart";
 import "package:interactive_chart/candle.dart";
 import "package:interactive_chart/interactive_chart.dart";
+import "package:interactive_chart_widgetbook/color_palette.dart";
+import "package:interactive_chart_widgetbook/widgets/pulsing_dot.dart";
 import "package:widgetbook/widgetbook.dart";
 import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 
-@widgetbook.UseCase(name: "Candles + volume + MA", type: InteractiveChart)
-Widget defaultUseCase(BuildContext context) => _InteractiveChartDemo(
+/// One chart that combines the library's main features:
+///
+/// - a candle / line series toggle,
+/// - an optional volume histogram,
+/// - a live subscription (10-second candles, one tick per second), and
+/// - pagination that loads older history as the user pans back in time.
+@widgetbook.UseCase(name: "Interactive chart", type: InteractiveChart)
+Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
   initialAnchor: context.knobs.object.dropdown(
     label: "Initial anchor",
     options: ChartAnchor.values,
@@ -33,6 +40,11 @@ Widget defaultUseCase(BuildContext context) => _InteractiveChartDemo(
     min: 1,
     max: 64,
   ),
+  showVolume: context.knobs.boolean(label: "Show volume", initialValue: true),
+  showMovingAverage: context.knobs.boolean(
+    label: "Show MA 20",
+    initialValue: true,
+  ),
   panEnabled: context.knobs.boolean(label: "Pan enabled", initialValue: true),
   zoomEnabled: context.knobs.boolean(label: "Zoom enabled", initialValue: true),
   crosshairEnabled: context.knobs.boolean(
@@ -41,12 +53,16 @@ Widget defaultUseCase(BuildContext context) => _InteractiveChartDemo(
   ),
 );
 
+enum _SeriesType { candles, line }
+
 class _InteractiveChartDemo extends StatefulWidget {
   const _InteractiveChartDemo({
     required this.initialAnchor,
     required this.valueAxisPlacement,
     required this.timeAxisPlacement,
     required this.initialSlotExtent,
+    required this.showVolume,
+    required this.showMovingAverage,
     required this.panEnabled,
     required this.zoomEnabled,
     required this.crosshairEnabled,
@@ -56,6 +72,8 @@ class _InteractiveChartDemo extends StatefulWidget {
   final ValueAxisPlacement valueAxisPlacement;
   final TimeAxisPlacement timeAxisPlacement;
   final double initialSlotExtent;
+  final bool showVolume;
+  final bool showMovingAverage;
   final bool panEnabled;
   final bool zoomEnabled;
   final bool crosshairEnabled;
@@ -65,14 +83,248 @@ class _InteractiveChartDemo extends StatefulWidget {
 }
 
 class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
-  late final List<Candle> _candles = generateDemoCandles();
+  static const _candleSeconds = 10;
+  static const _tickInterval = Duration(seconds: 1);
+  static const _pageSize = 120;
+  static const _loadThresholdSlots = 20;
+  static const _maxPages = 10;
+
   final _controller = InteractiveChartController();
-  int? _tappedIndex;
+  final _random = math.Random(3);
+  late List<Candle> _candles = _withMovingAverage(_generateHistory(count: 200));
+  Timer? _timer;
+
+  _SeriesType _series = _SeriesType.candles;
+
+  bool _subscribed = true;
+  DateTime? _lastTickAt;
+
+  bool _isLoadingOlder = false;
+  bool _exhaustedOlder = false;
+  int _pagesLoaded = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  // --- Data generation -----------------------------------------------------
+
+  /// Start of the candle bucket containing [t].
+  static DateTime _bucketStart(DateTime t) {
+    const size = _candleSeconds * 1000;
+    final ms = t.millisecondsSinceEpoch;
+    return DateTime.fromMillisecondsSinceEpoch(ms - ms % size);
+  }
+
+  /// [count] completed candles ending just before the current bucket.
+  List<Candle> _generateHistory({required int count}) {
+    final random = math.Random(7);
+    final first = _bucketStart(DateTime.now())
+        .subtract(Duration(seconds: _candleSeconds * count));
+    var price = 100.0;
+    final candles = <Candle>[];
+    for (var i = 0; i < count; i++) {
+      final open = price;
+      final close = math.max(1.0, open + (random.nextDouble() - 0.5) * 1.2);
+      price = close;
+      candles.add(
+        Candle(
+          time: first.add(Duration(seconds: _candleSeconds * i)),
+          open: open,
+          high: math.max(open, close) + random.nextDouble() * 0.5,
+          low: math.max(0.5, math.min(open, close) - random.nextDouble() * 0.5),
+          close: close,
+          volume: 100 + random.nextDouble() * 500,
+        ),
+      );
+    }
+    return candles;
+  }
+
+  /// A page of [_pageSize] candles immediately preceding [existingFirst],
+  /// with its last close lined up against [existingFirst]'s open.
+  List<Candle> _generateOlderPage(Candle existingFirst) {
+    final random = math.Random(existingFirst.time.millisecondsSinceEpoch);
+    var price = existingFirst.open;
+    final page = <Candle>[];
+    for (var i = 1; i <= _pageSize; i++) {
+      final close = price;
+      final open = math.max(1.0, close - (random.nextDouble() - 0.5) * 1.2);
+      price = open;
+      page.add(
+        Candle(
+          time: existingFirst.time.subtract(
+            Duration(seconds: _candleSeconds * i),
+          ),
+          open: open,
+          high: math.max(open, close) + random.nextDouble() * 0.5,
+          low: math.max(0.5, math.min(open, close) - random.nextDouble() * 0.5),
+          close: close,
+          volume: 100 + random.nextDouble() * 500,
+        ),
+      );
+    }
+    return page.reversed.toList();
+  }
+
+  /// Returns [candles] with [Candle.ma20] filled in (NaN until 20 closes).
+  static List<Candle> _withMovingAverage(List<Candle> candles) {
+    const period = 20;
+    var sum = 0.0;
+    return [
+      for (var i = 0; i < candles.length; i++)
+        () {
+          final c = candles[i];
+          sum += c.close;
+          if (i >= period) {
+            sum -= candles[i - period].close;
+          }
+          return Candle(
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+            ma20: i >= period - 1 ? sum / period : double.nan,
+          );
+        }(),
+    ];
+  }
+
+  // --- Subscription --------------------------------------------------------
+
+  void _subscribe() {
+    _onTick(); // Deliver one immediately so the forming candle shows at once.
+    _timer = Timer.periodic(_tickInterval, (_) => _onTick());
+  }
+
+  void _toggleSubscription() {
+    setState(() => _subscribed = !_subscribed);
+    if (_subscribed) {
+      _subscribe();
+    } else {
+      _timer?.cancel();
+    }
+  }
+
+  /// Updates the forming candle in place (R-DATA-12), or appends a new one
+  /// when the clock has entered a new bucket (R-DATA-9).
+  void _onTick() {
+    final now = DateTime.now();
+    final bucket = _bucketStart(now);
+    final last = _candles.last;
+    final newClose = math.max(
+      0.5,
+      last.close + (_random.nextDouble() - 0.5) * 0.6,
+    );
+    final candles = List<Candle>.of(_candles);
+
+    if (bucket.isAfter(last.time)) {
+      // Fill buckets missed while paused with flat candles so the series
+      // keeps a constant cadence.
+      final prevClose = last.close;
+      var t = last.time.add(const Duration(seconds: _candleSeconds));
+      while (t.isBefore(bucket)) {
+        candles.add(
+          Candle(
+            time: t,
+            open: prevClose,
+            high: prevClose,
+            low: prevClose,
+            close: prevClose,
+            volume: 0,
+          ),
+        );
+        t = t.add(const Duration(seconds: _candleSeconds));
+      }
+      candles.add(
+        Candle(
+          time: bucket,
+          open: prevClose,
+          high: math.max(prevClose, newClose),
+          low: math.min(prevClose, newClose),
+          close: newClose,
+          volume: 100 + _random.nextDouble() * 100,
+        ),
+      );
+    } else {
+      candles[candles.length - 1] = Candle(
+        time: last.time,
+        open: last.open,
+        high: math.max(last.high, newClose),
+        low: math.min(last.low, newClose),
+        close: newClose,
+        volume: last.volume + _random.nextDouble() * 50,
+      );
+    }
+
+    setState(() {
+      _candles = _withMovingAverage(candles);
+      _lastTickAt = now;
+    });
+  }
+
+  // --- Pagination ----------------------------------------------------------
+
+  /// Driven by [InteractiveChart.onVisibleRangeChanged] (R-PAGE-1/2), with an
+  /// in-flight guard (R-PAGE-7) and an exhausted latch (R-PAGE-8). A
+  /// `Future.delayed` stands in for a network fetch.
+  ///
+  /// The POC doesn't keep the view stationary across a prepend (R-DATA-10),
+  /// so the chart jumps once an older page lands.
+  void _onVisibleRangeChanged(int start, int end) {
+    if (start > _loadThresholdSlots || _isLoadingOlder || _exhaustedOlder) {
+      return;
+    }
+    _loadOlderPage();
+  }
+
+  Future<void> _loadOlderPage() async {
+    setState(() => _isLoadingOlder = true);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted) {
+      return;
+    }
+    // Build from the current first candle: the live feed may have changed the
+    // list while the "request" was in flight.
+    final page = _generateOlderPage(_candles.first);
+    _pagesLoaded++;
+    setState(() {
+      _candles = _withMovingAverage([...page, ..._candles]);
+      _isLoadingOlder = false;
+      _exhaustedOlder = _pagesLoaded >= _maxPages;
+    });
+  }
+
+  // --- UI ------------------------------------------------------------------
+
+  String _lastTickLabel() {
+    final at = _lastTickAt;
+    if (at == null) {
+      return "Waiting for first tick…";
+    }
+    String two(int n) => n.toString().padLeft(2, "0");
+    return "Last tick: ${two(at.hour)}:${two(at.minute)}:${two(at.second)}";
+  }
+
+  String _historyLabel() {
+    if (_exhaustedOlder) {
+      return "No more history";
+    }
+    if (_isLoadingOlder) {
+      return "Loading older candles…";
+    }
+    return "Pan left to load history ($_pagesLoaded page(s) loaded)";
   }
 
   @override
@@ -82,13 +334,51 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
       children: [
         Padding(
           padding: const EdgeInsets.all(8),
-          child: Row(
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              SegmentedButton<_SeriesType>(
+                segments: const [
+                  ButtonSegment(
+                    value: _SeriesType.candles,
+                    label: Text("Candles"),
+                    icon: Icon(Icons.candlestick_chart),
+                  ),
+                  ButtonSegment(
+                    value: _SeriesType.line,
+                    label: Text("Line"),
+                    icon: Icon(Icons.show_chart),
+                  ),
+                ],
+                selected: {_series},
+                onSelectionChanged: (s) => setState(() => _series = s.first),
+              ),
               FilledButton(
-                onPressed: _controller.jumpToLatest,
+                onPressed: () => _controller.jumpToLatest(
+                  slotExtent: widget.initialSlotExtent,
+                ),
                 child: const Text("Jump to latest"),
               ),
-              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _toggleSubscription,
+                child: Text(_subscribed ? "Pause feed" : "Resume feed"),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.circle,
+                    size: 10,
+                    color: _subscribed ? colors.green : colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(_subscribed ? "Live" : "Paused"),
+                ],
+              ),
+              Text(_lastTickLabel()),
+              Text(_historyLabel()),
               AnimatedBuilder(
                 animation: _controller,
                 builder: (context, _) => Row(
@@ -102,330 +392,87 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
-              AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) {
-                  final (start, end) = _controller.visibleRange;
-                  return Text(
-                    "visible: [$start, $end) · slotExtent=${_controller.slotExtent.toStringAsFixed(1)}",
-                  );
-                },
-              ),
-              const SizedBox(width: 16),
-              Text(
-                _tappedIndex == null
-                    ? "Tap a candle"
-                    : "Tapped candle: $_tappedIndex",
-              ),
             ],
           ),
         ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: InteractiveChart<Candle>(
-              controller: _controller,
-              data: _candles,
-              timeOf: (c) => c.time,
-              initialAnchor: widget.initialAnchor,
-              initialSlotExtent: widget.initialSlotExtent,
-              panEnabled: widget.panEnabled,
-              zoomEnabled: widget.zoomEnabled,
-              crosshairEnabled: widget.crosshairEnabled,
-              valueAxis: ValueAxisConfig(placement: widget.valueAxisPlacement),
-              timeAxis: TimeAxisConfig(placement: widget.timeAxisPlacement),
-              layers: [
-                const GridLayer<Candle>(),
-                HistogramLayer<Candle>(
-                  heightFraction: 0.1,
-                  valueOf: (c) => c.volume,
-                  color: colors.blue.withValues(alpha: 0.4),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveChart<Candle>(
+                    controller: _controller,
+                    data: _candles,
+                    timeOf: (c) => c.time,
+                    initialAnchor: widget.initialAnchor,
+                    initialSlotExtent: widget.initialSlotExtent,
+                    panEnabled: widget.panEnabled,
+                    zoomEnabled: widget.zoomEnabled,
+                    crosshairEnabled: widget.crosshairEnabled,
+                    onVisibleRangeChanged: _onVisibleRangeChanged,
+                    valueAxis: ValueAxisConfig(
+                      placement: widget.valueAxisPlacement,
+                    ),
+                    timeAxis: TimeAxisConfig(
+                      placement: widget.timeAxisPlacement,
+                    ),
+                    layers: [
+                      const GridLayer<Candle>(),
+                      if (widget.showVolume)
+                        HistogramLayer<Candle>(
+                          heightFraction: 0.1,
+                          valueOf: (c) => c.volume,
+                          color: colors.blue.withValues(alpha: 0.4),
+                        ),
+                      switch (_series) {
+                        _SeriesType.candles => CandleLayer<Candle>(
+                          openOf: (c) => c.open,
+                          highOf: (c) => c.high,
+                          lowOf: (c) => c.low,
+                          closeOf: (c) => c.close,
+                          upColor: colors.green,
+                          downColor: colors.red,
+                        ),
+                        _SeriesType.line => LineLayer<Candle>(
+                          valueOf: (c) => c.close,
+                          color: colors.blue,
+                          latestPointBuilder: (context, candle, index) =>
+                              PulsingDot(color: colors.blue),
+                        ),
+                      },
+                      if (widget.showMovingAverage)
+                        LineLayer<Candle>(
+                          valueOf: (c) => c.ma20,
+                          color: colors.purple,
+                        ),
+                      CrosshairLayer<Candle>(
+                        valueOf: (c) => c.close,
+                        timeOf: (c) => c.time,
+                      ),
+                    ],
+                  ),
                 ),
-                CandleLayer<Candle>(
-                  openOf: (c) => c.open,
-                  highOf: (c) => c.high,
-                  lowOf: (c) => c.low,
-                  closeOf: (c) => c.close,
-                  upColor: colors.green,
-                  downColor: colors.red,
-                  onTap: (index) => setState(() => _tappedIndex = index),
-                ),
-                LineLayer<Candle>(valueOf: (c) => c.ma20, color: colors.purple),
-                CrosshairLayer<Candle>(
-                  valueOf: (c) => c.close,
-                  timeOf: (c) => c.time,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Loads older history as the user scrolls back in time, driven by
-/// [InteractiveChart.onVisibleRangeChanged] (R-PAGE-1/2). Mirrors the shape
-/// of the fuller `R-PAGE-*` contract in `docs/requirements.md` §4.4 — an
-/// in-flight guard (R-PAGE-7) and an exhausted latch (R-PAGE-8) — using a
-/// `Future.delayed` in place of a real network fetch.
-///
-/// The POC doesn't implement R-DATA-10 (keeping the view visually stationary
-/// across a prepend — see `docs/poc_notes.md`), so panning past the load
-/// threshold does cause a visible jump once the older page lands; a
-/// production data source would want that compensation added to the widget
-/// itself rather than worked around here.
-@widgetbook.UseCase(name: "Candle pagination", type: InteractiveChart)
-Widget paginationUseCase(BuildContext context) => const _PaginationDemo();
-
-class _PaginationDemo extends StatefulWidget {
-  const _PaginationDemo();
-
-  @override
-  State<_PaginationDemo> createState() => _PaginationDemoState();
-}
-
-class _PaginationDemoState extends State<_PaginationDemo> {
-  static const _loadThresholdSlots = 20;
-  static const _maxPages = 4;
-
-  final _controller = InteractiveChartController();
-  late List<Candle> _candles = generateDemoCandles(count: 150);
-  bool _isLoadingOlder = false;
-  bool _exhaustedOlder = false;
-  int _pagesLoaded = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onVisibleRangeChanged(int start, int end) {
-    if (start > _loadThresholdSlots || _isLoadingOlder || _exhaustedOlder) {
-      return;
-    }
-    _loadOlderPage();
-  }
-
-  Future<void> _loadOlderPage() async {
-    setState(() => _isLoadingOlder = true);
-
-    // Simulates a network round-trip; a real caller would fetch here instead.
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) {
-      return;
-    }
-
-    final page = generateOlderCandlesPage(_candles.first);
-    _pagesLoaded++;
-    setState(() {
-      _candles = [...page, ..._candles];
-      _isLoadingOlder = false;
-      _exhaustedOlder = _pagesLoaded >= _maxPages;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = ColorPalette.of(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(
-            children: [
-              FilledButton(
-                onPressed: _controller.jumpToLatest,
-                child: const Text("Jump to latest"),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                _exhaustedOlder
-                    ? "No more history"
-                    : _isLoadingOlder
-                    ? "Loading older candles…"
-                    : "Pan left to load history ($_pagesLoaded page(s) loaded)",
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: InteractiveChart<Candle>(
-              controller: _controller,
-              data: _candles,
-              timeOf: (c) => c.time,
-              onVisibleRangeChanged: _onVisibleRangeChanged,
-              valueAxis: const ValueAxisConfig(),
-              timeAxis: const TimeAxisConfig(),
-              layers: [
-                const GridLayer<Candle>(),
-                HistogramLayer<Candle>(
-                  heightFraction: 0.1,
-                  valueOf: (c) => c.volume,
-                  color: colors.blue.withValues(alpha: 0.4),
-                ),
-                CandleLayer<Candle>(
-                  openOf: (c) => c.open,
-                  highOf: (c) => c.high,
-                  lowOf: (c) => c.low,
-                  closeOf: (c) => c.close,
-                  upColor: colors.green,
-                  downColor: colors.red,
-                ),
-                CrosshairLayer<Candle>(
-                  valueOf: (c) => c.close,
-                  timeOf: (c) => c.time,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Simulates a live candle subscription. Most ticks update the last candle
-/// in place (R-DATA-12); every few ticks it rolls over into a brand-new bar
-/// instead (append), demonstrating that appending must not disturb the
-/// user's current pan/zoom (R-DATA-9) — panning away from the latest candle
-/// and letting the feed keep ticking leaves the viewport exactly where the
-/// user left it.
-@widgetbook.UseCase(name: "Candle subscription", type: InteractiveChart)
-Widget subscriptionUseCase(BuildContext context) => const _SubscriptionDemo();
-
-class _SubscriptionDemo extends StatefulWidget {
-  const _SubscriptionDemo();
-
-  @override
-  State<_SubscriptionDemo> createState() => _SubscriptionDemoState();
-}
-
-class _SubscriptionDemoState extends State<_SubscriptionDemo> {
-  static const _ticksPerBar = 6;
-
-  final _controller = InteractiveChartController();
-  final _random = math.Random(3);
-  late List<Candle> _candles = generateDemoCandles(count: 300);
-  Timer? _timer;
-  int _ticksInBar = 0;
-  bool _subscribed = true;
-  DateTime? _lastTickAt;
-
-  @override
-  void initState() {
-    super.initState();
-    _subscribe();
-  }
-
-  void _subscribe() {
-    _timer = Timer.periodic(
-      const Duration(milliseconds: 800),
-      (_) => _onTick(),
-    );
-  }
-
-  void _onTick() {
-    final (candles, ticksInBar) = tickLiveCandles(
-      _candles,
-      ticksInBar: _ticksInBar,
-      ticksPerBar: _ticksPerBar,
-      random: _random,
-    );
-    setState(() {
-      _candles = candles;
-      _ticksInBar = ticksInBar;
-      _lastTickAt = DateTime.now();
-    });
-  }
-
-  void _toggleSubscription() {
-    setState(() => _subscribed = !_subscribed);
-    if (_subscribed) {
-      _subscribe();
-    } else {
-      _timer?.cancel();
-    }
-  }
-
-  String _lastTickLabel() {
-    final at = _lastTickAt;
-    if (at == null) {
-      return "Waiting for first tick…";
-    }
-    String two(int n) => n.toString().padLeft(2, "0");
-    return "Last tick: ${two(at.hour)}:${two(at.minute)}:${two(at.second)}";
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = ColorPalette.of(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(
-            children: [
-              FilledButton(
-                onPressed: _controller.jumpToLatest,
-                child: const Text("Jump to latest"),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: _toggleSubscription,
-                child: Text(_subscribed ? "Pause feed" : "Resume feed"),
-              ),
-              const SizedBox(width: 16),
-              Icon(
-                Icons.circle,
-                size: 10,
-                color: _subscribed ? colors.green : colors.red,
-              ),
-              const SizedBox(width: 4),
-              Text(_subscribed ? "Live" : "Paused"),
-              const SizedBox(width: 16),
-              Text(_lastTickLabel()),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: InteractiveChart<Candle>(
-              controller: _controller,
-              data: _candles,
-              timeOf: (c) => c.time,
-              valueAxis: const ValueAxisConfig(),
-              timeAxis: const TimeAxisConfig(),
-              layers: [
-                const GridLayer<Candle>(),
-                HistogramLayer<Candle>(
-                  heightFraction: 0.1,
-                  valueOf: (c) => c.volume,
-                  color: colors.blue.withValues(alpha: 0.4),
-                ),
-                CandleLayer<Candle>(
-                  openOf: (c) => c.open,
-                  highOf: (c) => c.high,
-                  lowOf: (c) => c.low,
-                  closeOf: (c) => c.close,
-                  upColor: colors.green,
-                  downColor: colors.red,
-                ),
-                CrosshairLayer<Candle>(
-                  valueOf: (c) => c.close,
-                  timeOf: (c) => c.time,
+                // Top-left loading indicator, pushed below the 22px time axis
+                // when that axis sits at the top.
+                Positioned(
+                  left: 8,
+                  top: widget.timeAxisPlacement == TimeAxisPlacement.top
+                      ? 30
+                      : 8,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _isLoadingOlder ? 1 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: const SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Color(0xFF00E676),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

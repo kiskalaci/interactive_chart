@@ -20,22 +20,10 @@ final directories = <_widgetbook.WidgetbookNode>[
     name: 'InteractiveChart',
     useCases: [
       _widgetbook.WidgetbookUseCase(
-        name: 'Candle pagination',
+        name: 'Interactive chart',
         builder:
             _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook
-                .paginationUseCase,
-      ),
-      _widgetbook.WidgetbookUseCase(
-        name: 'Candle subscription',
-        builder:
-            _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook
-                .subscriptionUseCase,
-      ),
-      _widgetbook.WidgetbookUseCase(
-        name: 'Candles + volume + MA',
-        builder:
-            _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook
-                .defaultUseCase,
+                .interactiveChartUseCase,
       ),
     ],
   ),

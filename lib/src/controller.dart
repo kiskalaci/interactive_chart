@@ -30,13 +30,21 @@ class InteractiveChartController extends ChangeNotifier {
   void setAutoscale(bool value) => _ctx?.setAutoscale(value);
 
   /// Scrolls to the newest data (R-SCROLL-5's manual counterpart: "jump to
-  /// latest").
-  void jumpToLatest() {
+  /// latest"). If [slotExtent] is given, zoom is reset to it as well.
+  void jumpToLatest({double? slotExtent}) {
     final ctx = _ctx;
     if (ctx == null) {
       return;
     }
-    ctx.jumpTo(ctx.contentExtent - ctx.viewportWidth);
+    if (slotExtent == null) {
+      ctx.jumpTo(ctx.contentExtent - ctx.viewportWidth);
+      return;
+    }
+    final clamped = slotExtent.clamp(ctx.minSlotExtent, ctx.maxSlotExtent);
+    ctx.setSlotExtentAndScroll(
+      clamped,
+      ctx.slotCount * clamped - ctx.viewportWidth,
+    );
   }
 
   void clearHighlight() => _ctx?.setHighlighted(null);

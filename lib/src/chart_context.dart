@@ -97,11 +97,17 @@ class InteractiveChartContext extends ChangeNotifier {
     _recomputeVisibleRange();
   }
 
-  void setSlotCount(int count) {
+  /// [prepended] is how many slots were inserted before the previous first
+  /// one (R-DATA-10): the scroll offset moves by that many slots so the
+  /// visible candles stay exactly where they were.
+  void setSlotCount(int count, {int prepended = 0}) {
     if (slotCount == count) {
       return;
     }
     slotCount = count;
+    if (_initialAnchorApplied && prepended > 0) {
+      _scrollOffset += prepended * _slotExtent;
+    }
     _applyInitialAnchorIfNeeded();
     _clampScroll();
     _recomputeVisibleRange();
@@ -145,7 +151,9 @@ class InteractiveChartContext extends ChangeNotifier {
   /// value window down, matching direct-manipulation drag semantics.
   void panValueByPixels(double deltaPx) {
     final span = valueMax - valueMin;
-    if (span <= 0 || viewportHeight <= 0) {
+    // A purely horizontal drag has no vertical movement and must not drop
+    // the chart out of autoscale.
+    if (deltaPx == 0 || span <= 0 || viewportHeight <= 0) {
       return;
     }
     final deltaValue = deltaPx / viewportHeight * span;

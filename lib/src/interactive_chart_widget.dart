@@ -125,13 +125,38 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     super.didUpdateWidget(oldWidget);
     if (widget.data.length != oldWidget.data.length) {
       // R-DATA-9: appending/changing data must not reset pan/zoom.
-      ctx.setSlotCount(widget.data.length);
+      ctx.setSlotCount(
+        widget.data.length,
+        prepended: _prependedCount(oldWidget.data, widget.data),
+      );
     }
     if (widget.controller != oldWidget.controller) {
       _ownedController?.dispose();
       _ownedController = null;
       _attachController();
     }
+  }
+
+  /// How many items were inserted before the old first datum (R-DATA-10),
+  /// found by binary-searching the old first timestamp in the new, ascending
+  /// data. Zero unless older data really was prepended.
+  int _prependedCount(List<T> oldData, List<T> newData) {
+    if (oldData.isEmpty || newData.length <= oldData.length) {
+      return 0;
+    }
+    final target = widget.timeOf(oldData.first);
+    var lo = 0;
+    var hi = newData.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (widget.timeOf(newData[mid]).isBefore(target)) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final found = lo < newData.length && widget.timeOf(newData[lo]) == target;
+    return found ? lo : 0;
   }
 
   void _onContextChanged() {
