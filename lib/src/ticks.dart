@@ -166,6 +166,16 @@ List<DateTime> projectTimes(
   final modalSeconds = inferModalIntervalSeconds(real, sampleSize: sampleSize);
   final isDailyPlus = modalSeconds >= 24 * 60 * 60;
 
+  // Monthly or coarser cadences (R-TIME-21): step by calendar months from the
+  // last real datum, so Jan 31 -> Feb 28/29 -> Mar 31 rather than drifting
+  // by a fixed number of days. A 28-day cadence is indistinguishable from
+  // monthly here and is treated as monthly.
+  const day = 24 * 60 * 60;
+  if (modalSeconds >= 28 * day) {
+    final months = math.max(1, (modalSeconds / (30.4375 * day)).round());
+    return [for (var i = 1; i <= count; i++) _addMonths(real.last, months * i)];
+  }
+
   var t = real.last;
   final result = <DateTime>[];
   for (var i = 0; i < count; i++) {
@@ -178,6 +188,28 @@ List<DateTime> projectTimes(
     result.add(t);
   }
   return result;
+}
+
+/// [t] moved forward by [months] calendar months, keeping the time of day
+/// and clamping the day to the target month's length (Jan 31 + 1 month is
+/// Feb 28, or Feb 29 in a leap year).
+DateTime _addMonths(DateTime t, int months) {
+  final monthIndex = t.month - 1 + months;
+  final year = t.year + monthIndex ~/ 12;
+  final month = monthIndex % 12 + 1;
+  final lastDay = DateTime(year, month + 1, 0).day;
+  final day = math.min(t.day, lastDay);
+  return t.isUtc
+      ? DateTime.utc(
+          year,
+          month,
+          day,
+          t.hour,
+          t.minute,
+          t.second,
+          t.millisecond,
+        )
+      : DateTime(year, month, day, t.hour, t.minute, t.second, t.millisecond);
 }
 
 /// Single-slot convenience matching the `DateTime Function(int)` projector
@@ -204,11 +236,14 @@ List<double> niceValueTicks(double min, double max, {int targetCount = 5}) {
       .pow(10, (math.log(rawStep) / math.ln10).floor())
       .toDouble();
   final residual = rawStep / magnitude;
+  // 1/2/2.5/5/10 progression (R-AXIS-8): round the raw step up to the next.
   double niceResidual;
   if (residual > 5) {
     niceResidual = 10;
-  } else if (residual > 2) {
+  } else if (residual > 2.5) {
     niceResidual = 5;
+  } else if (residual > 2) {
+    niceResidual = 2.5;
   } else if (residual > 1) {
     niceResidual = 2;
   } else {

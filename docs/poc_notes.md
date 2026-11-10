@@ -87,6 +87,14 @@ Tests: `flutter test` from the package root.
   the last datum, e.g. a pulsing "live" dot. It is built only while that
   datum is inside the visible range and has a finite value, and it ignores
   pointer events.
+- **Autoscale follows data changes, not only range changes.** Every parent
+  rebuild of the chart marks autoscale dirty, so a live tick that moves the
+  last bar's high or low outside the current extent rescales immediately
+  (R-SCALE-10). Pans and zooms that don't change the data don't trigger it.
+- **Value-axis ticks use the 1/2/2.5/5/10 ladder** (R-AXIS-8).
+- **`onIndexHighlighted` reports `null` over a projected slot** (R-TIME-29).
+  The crosshair still shows the projected time badge; there is no separate
+  `onProjectedTimeHighlighted` callback yet.
 - **Autoscale stays on for horizontal drags.** `panValueByPixels` ignores a
   zero vertical delta, so a purely horizontal pan no longer switches
   autoscale off. Any drag with vertical movement still does (see the
@@ -137,8 +145,11 @@ building all of §1–16 is a multi-milestone effort (see requirements.md §14):
 - **Tick-hierarchy simplifications**: 6 weight tiers instead of 13 (no
   ISO-week, 12/6/3-hour, or 30/5-minute tiers); `minLabelSpacingPx` is a
   configured constant rather than measured against surviving labels
-  (R-TIME-8); interval projection is calendar-day-accurate but not
-  calendar-month-accurate (R-TIME-21, e.g. no Jan 31 → Feb 28 stepping).
+  (R-TIME-8); interval projection is calendar-day-accurate for
+  daily-or-finer series and calendar-month-accurate for monthly-or-coarser
+  ones (Jan 31 → Feb 28/29 → Mar 31, quarterly, yearly). Cadences between a
+  day and 28 days (e.g. weekly) use fixed steps with no weekend skipping,
+  and a 28-day cadence is treated as monthly.
 - **No log value scale** (R-SCALE-5), **no value-axis pan** (a plain vertical
   drag on the value axis always zooms per R-SCROLL-7; a dedicated pan gesture
   is not implemented), **no keyboard navigation** (R-INT-5).
@@ -207,3 +218,338 @@ That browser verification predates the changes in this revision. Since then,
 the package and `widgetbook/` pass `flutter analyze` and the widget tests in
 `test/` pass, but the combined widgetbook demo (live feed, pagination,
 spinner, pulsing dot, theme toggle) has not been driven in a browser.
+
+## Test plan
+
+This plan lists the tests needed before the library can be called production
+ready. It covers every feature listed under "What's implemented", plus the
+robustness, performance and platform checks the requirements doc asks for in
+§11–§13 (`R-TEST-*`, `R-PERF-*`). Cases marked ✅ already exist in `test/`;
+everything else is still to write.
+
+### How to read the tables
+
+- **ID**: `TC-<AREA>-<NN>`. Keep IDs stable once a test exists, and put the ID
+  in the test's name so failures can be traced back here.
+- **Level**: **U** unit (pure Dart, no widgets), **W** widget test
+  (`flutter_test`), **G** golden, **I** integration on a real device or
+  browser (`integration_test` or Playwright for web), **P** performance
+  (profile-mode benchmark), **M** manual/exploratory.
+- **Pri**: **P0** blocks release, **P1** should pass before release, **P2**
+  hardening.
+- ✅ (fixed) marks a gap that was confirmed by a failing test in `test/known_gaps_test.dart` and has since been fixed; ⚠ marks a case where the current code is expected to **fail or deviate**
+  from the requirement. Each needs a decision: fix the code, or accept the
+  deviation and record it under "What's simplified or out of scope".
+
+### Fixtures and conventions
+
+- **Data**: one deterministic generator per cadence (10 s, 1 min, 1 h, daily
+  trading days, monthly), seeded, with helpers to insert NaN gaps, duplicate
+  timestamps, and weekend or holiday gaps. Do not use `DateTime.now()` in
+  tests; pass a fixed start time.
+- **Viewport**: pump the chart in a fixed `SizedBox` (800×400 unless the case
+  says otherwise) inside `MaterialApp`, so slot and pixel arithmetic is exact.
+- **Time**: use `fakeAsync` / `tester.pump(duration)` for anything timer or
+  animation based (live feed, pulsing marker, paging delays).
+- **Pointer input**: drive mouse hover, wheel, and trackpad with `TestPointer`
+  (`PointerDeviceKind.mouse` / `trackpad`), touch with `tester.drag`,
+  `tester.timedDrag` and `startGesture` for multi-touch pinch.
+- **Assertions**: read state through `InteractiveChartController`
+  (`visibleRange`, `slotExtent`, `autoscale`, `highlightedIndex`) rather than
+  by inspecting private fields. Where layout positions matter, assert with
+  `tester.getRect` on keyed widgets.
+- **Goldens**: fixed font (load a test font, no system fonts), fixed device
+  pixel ratio, light and dark variants.
+
+### 1. Data model and data updates (§4.1, §4.3)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-DATA-01 | Chart with a custom datum type (record, plain class, `int`) | Renders through accessor functions only; no dependency on `Candle` | W | P0 |
+| TC-DATA-02 | Empty `data` list | No exception; no layers draw content; axes render without labels; visible range `(0, 0)` | W | P0 |
+| TC-DATA-03 | Single datum | Renders one slot; autoscale uses the degenerate-extent rule (TC-SCALE-04) | W | P0 |
+| TC-DATA-04 | Append one datum while the view is mid-history (R-DATA-9) | Visible range, slot extent and scroll offset unchanged | W | P0 |
+| TC-DATA-05 | Append while the view is at the right edge | View stays where it was (no follow mode, R-SCROLL-5 not implemented). Pin current behaviour so a future follow mode is a deliberate change | W | P1 |
+| TC-DATA-06 | ✅ Prepend 120 items while at the left edge (R-DATA-10) | `visibleStart` moves from 0 to 120; same data stays on screen (`test/prepend_test.dart`) | W | P0 |
+| TC-DATA-07 | Prepend while mid-history and zoomed in | Visible range shifts by exactly the prepended count; on-screen x of a given datum unchanged to < 0.5 px | W | P0 |
+| TC-DATA-08 | Prepend and append in the same update | View shifts by the prepended count only | W | P0 |
+| TC-DATA-09 | Replace the data with an unrelated list of the same or larger length (old first timestamp not present) | Prepend count is 0; no shift, no exception | W | P0 |
+| TC-DATA-10 | Data shrinks (length decreases) | Scroll is re-clamped; visible range stays inside `[0, length)`; no index-out-of-range in any layer | W | P0 |
+| TC-DATA-11 | Duplicate timestamps at the old first position | Binary search finds the first match; documented result for the prepended count | U | P2 |
+| TC-DATA-12 | Unsorted data | Behaviour is documented (assert in debug mode, or define it as undefined). No crash | W | P2 |
+| TC-DATA-13 | In-place update of the last datum, same length (live tick) | New values are drawn on the next frame; viewport unchanged | W | P0 |
+| TC-DATA-14 | NaN / ±infinity values in each accessor (R-DATA-8) | Skipped in drawing and in extent; line breaks at the gap; no exception | W | P0 |
+| TC-DATA-15 | Prepend before the initial anchor has been applied (viewport still 0×0) | Initial anchor wins; no double shift | W | P1 |
+
+### 2. Horizontal scale, viewport and anchoring (§5, §6.1)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-X-01 | `xOf(i)` against `indexAtViewportX(x)` across zoom levels | Round-trips to the same index; slot centre maps to the slot | U | P0 |
+| TC-X-02 | Visible range culling | `[visibleStart, visibleEnd)` covers exactly the slots intersecting the viewport, clamped to real data | U | P0 |
+| TC-X-03 | `initialAnchor: left` | Opens with `visibleStart == 0` | W | P0 |
+| TC-X-04 | `initialAnchor: right` | Opens at max scroll offset, newest datum visible with overscroll space after it | W | P0 |
+| TC-X-05 | Initial anchor is applied only once | Later data changes or viewport resizes never re-anchor | W | P0 |
+| TC-X-06 | Overscroll past the newest datum (R-SCROLL-4) | Allowed up to half the viewport width, no further | W | P0 |
+| TC-X-07 | Overscroll before the oldest datum | Not allowed (min scroll offset is 0) | W | P1 |
+| TC-X-08 | `initialSlotExtent` outside `[minSlotExtent, maxSlotExtent]` | Clamped | U | P1 |
+| TC-X-09 | Viewport resize (window or parent shrinks or grows) | Scroll re-clamped; no jump beyond the clamp; visible range recomputed | W | P0 |
+| TC-X-10 | Data shorter than the viewport | Content fits; scroll limits are consistent; no negative ranges | W | P1 |
+
+### 3. Value scale and autoscale (§5, R-SCALE-*)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-SCALE-01 | Autoscale uses only the visible range (R-SCALE-8) | Extent equals min/max of contributing layers over visible indices, plus 5 % padding | W | P0 |
+| TC-SCALE-02 | Layers that opt out (`GridLayer`, `HistogramLayer` default, `LineLayer(contributesToExtent: false)`) | Excluded from extent | U | P0 |
+| TC-SCALE-03 | `HistogramLayer(contributesToExtent: true)` | Contributes `(0, max)` | U | P1 |
+| TC-SCALE-04 | Degenerate extent: all visible values equal, or one datum (R-SCALE-11) | Extent is value ± 0.5 before padding; no divide-by-zero | U | P0 |
+| TC-SCALE-05 | No contributing layer has data in range | Extent falls back to `0..1` | U | P1 |
+| TC-SCALE-06 | Pan within the same index range (R-SCALE-10) | Autoscale is not recomputed | W | P1 |
+| TC-SCALE-07 | ✅ (fixed) Live tick raises the last candle's high above the current extent, length unchanged | Spec: extent updates ("or the underlying data changes"). Current code recomputes only when range or length changes, so the new high can be clipped | W | P0 |
+| TC-SCALE-08 | Autoscale off, then data changes | Manual extent is kept | W | P0 |
+| TC-SCALE-09 | `setAutoscale(true)` after a manual extent | Extent is recomputed immediately | W | P0 |
+| TC-SCALE-10 | `yOf` / `valueOfViewportY` inverse | Round-trips within floating-point tolerance | U | P0 |
+| TC-SCALE-11 | ✅ (fixed) Value tick steps (R-AXIS-8) | Spec asks for a 1/2/2.5/5/10 progression; `niceValueTicks` produces 1/2/5/10 only | U | P1 |
+| TC-SCALE-12 | Value ticks across magnitudes (0.0001 to 1e9, negative ranges, ranges crossing zero) | Ticks are ascending, evenly stepped, inside the extent, about 5 of them | U | P0 |
+
+### 4. Pan and zoom gestures (§6)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-GEST-01 | Horizontal drag | Pans x by the drag distance; clamped at both ends | W | P0 |
+| TC-GEST-02 | ✅ Purely horizontal drag | Autoscale stays on (`test/prepend_test.dart`) | W | P0 |
+| TC-GEST-03 | Drag with vertical movement | Pans the value extent and switches autoscale off (documented deviation from R-SCROLL-6) | W | P0 |
+| TC-GEST-04 | Two-finger pinch, focal point fixed | Datum under the focal point stays under it (< 0.5 px) through the whole gesture | W | P0 |
+| TC-GEST-05 | Sustained pinch over 100+ update events | No cumulative drift (gesture-start reference) | W | P0 |
+| TC-GEST-06 | Pinch past `minSlotExtent` / `maxSlotExtent` | Clamped; focal point still held at the clamp | W | P0 |
+| TC-GEST-07 | Vertical-dominant mouse wheel | Zooms x anchored at the pointer | W | P0 |
+| TC-GEST-08 | Horizontal-dominant wheel or trackpad scroll | Pans x; no zoom | W | P0 |
+| TC-GEST-09 | Vertical-only wheel with `zoomEnabled: false` | Pans x | W | P0 |
+| TC-GEST-10 | `panEnabled: false` | Drag and horizontal scroll do nothing; zoom still works | W | P0 |
+| TC-GEST-11 | `zoomEnabled: false` | Pinch and wheel do not change slot extent | W | P0 |
+| TC-GEST-12 | Both disabled | No gesture changes the viewport; crosshair still works | W | P1 |
+| TC-GEST-13 | Trackpad pinch (`PointerPanZoom*` events on desktop) | Zooms anchored, same as touch pinch | W | P1 |
+| TC-GEST-14 | Fling / fast drag | Ends clamped, no overshoot past limits | W | P2 |
+| TC-GEST-15 | Chart inside a scrollable parent (`ListView`) | Horizontal drag pans the chart; vertical page scroll behaviour is defined and documented | W | P1 |
+
+### 5. Axes and axis gutters (§7.1–7.2, R-ZOOM-2, R-SCROLL-6..8)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-AXIS-01 | All four present/absent combinations of value and time axis (R-TEST-2) | Viewport reclaims the gutter of any absent axis | W | P0 |
+| TC-AXIS-02 | Value axis left vs right; time axis top vs bottom | Gutters sit on the right side; viewport and the other axis are aligned | W, G | P0 |
+| TC-AXIS-03 | Value gutter grows when a wider label appears (R-AXIS-5) | Width grows; it never shrinks while panning | W | P0 |
+| TC-AXIS-04 | Custom `ValueAxisConfig.formatter` / `TimeAxisConfig.formatter` | Used for every label | W | P0 |
+| TC-AXIS-05 | Value labels outside the viewport (beyond ±8 px) | Not rendered | W | P2 |
+| TC-AXIS-06 | Time label that would cross a viewport edge (R-TIME-15) | Dropped, not clipped | W | P0 |
+| TC-AXIS-07 | Wheel on the time axis | Zooms x anchored at the pointer x | W | P0 |
+| TC-AXIS-08 | Horizontal drag on the time axis | Zooms x; right drag zooms in | W | P1 |
+| TC-AXIS-09 | Wheel on the value axis | Zooms y anchored at the pointer y; autoscale off | W | P0 |
+| TC-AXIS-10 | Vertical drag on the value axis | Zooms y; autoscale off | W | P1 |
+| TC-AXIS-11 | Double-tap on the value axis | Autoscale back on, extent recomputed | W | P0 |
+| TC-AXIS-12 | Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ 60) | Applied to the right marks | W | P1 |
+| TC-AXIS-13 | Text scale factor 2.0 (accessibility font size) | Labels and gutters grow; no overlap or overflow errors | W | P1 |
+
+### 6. Time-axis tick hierarchy (§7.3, R-TEST-4)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-TIME-01 | `timeWeight` per tier: year, month, day, hour, minute, sub-minute | 70 / 60 / 50 / 30 / 20 / 10 | U | P0 |
+| TC-TIME-02 | First datum | Always weight 70 (R-TIME-2) | U | P0 |
+| TC-TIME-03 | Greedy selection | Higher weights win; no two accepted marks closer than `minLabelSpacingPx` (56 px) | U | P0 |
+| TC-TIME-04 | Pan at fixed zoom (R-TIME-9) | Mark set unchanged; marks only translate | W | P0 |
+| TC-TIME-05 | Sustained pinch (R-TIME-11) | Mark set changes only when the quantised slot-extent bucket changes (6 steps per doubling); no flicker between adjacent frames | W | P0 |
+| TC-TIME-06 | Labels by weight | Year → `2024`, month → `Mar`, day → `14`, hour/minute → `hh:mm`, sub-minute → `hh:mm:ss` | U | P0 |
+| TC-TIME-07 | Calendar edge cases: month end, year end, leap day, DST transitions in local time | Weights are correct on each boundary; no duplicated or missing label | U | P0 |
+| TC-TIME-08 | Mark set includes projected slots (R-TIME-24) | Scrolling into overscroll does not change the mark set | W | P0 |
+| TC-TIME-09 | Full zoom sweep from min to max slot extent on a daily series | At every bucket, labels never overlap and the coarsest boundary is labelled | W, G | P1 |
+
+### 7. Interval inference and projected slots (§7.3.5, R-TEST-7)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-PROJ-01 | `inferModalIntervalSeconds` on daily trading data with weekends | Returns 86 400 (modal, not mean) | U | P0 |
+| TC-PROJ-02 | 1-minute data with missing bars | Returns 60 | U | P0 |
+| TC-PROJ-03 | 10-second and 30-second data | Returns 10 and 30 | U | P0 |
+| TC-PROJ-04 | Fewer than 2 points | Falls back to 1 day | U | P1 |
+| TC-PROJ-05 | Sample size limit | Only the trailing `sampleSize` deltas are used | U | P2 |
+| TC-PROJ-06 | `projectTimes` on daily data | Steps by a day and skips Saturday and Sunday | U | P0 |
+| TC-PROJ-07 | `projectTimes` on intraday data | Fixed-step, no weekend skipping | U | P0 |
+| TC-PROJ-08 | `projectTimes` with empty data | Daily steps from now, no exception (inject the clock to test) | U | P2 |
+| TC-PROJ-09 | ✅ (fixed) Monthly series across Jan 31 → Feb 28 and a leap February (R-TIME-21) | Spec: calendar-correct. Current code: fixed-duration steps | U | P1 |
+| TC-PROJ-10 | Append a datum whose time equals the projected time (R-TIME-30) | Mark set is identical before and after | W | P1 |
+
+### 8. Layers (§8)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-LAYER-01 | Layer order | Later layers draw on top of earlier ones | W, G | P0 |
+| TC-LAYER-02 | Only visible slots are built (R-PERF-2) | Number of child widgets per layer is O(visible slots), not O(data length) | W | P0 |
+| TC-LAYER-03 | Custom `ChartLayer` subclass | Receives size, context and data; its `extentFor` feeds autoscale | W | P1 |
+| TC-GRID-01 | `GridLayer` | One line per value tick, at `yOf(tick)`, in the configured colour | W, G | P1 |
+| TC-CANDLE-01 | Up vs down candles (`close >= open` is up) | `upColor` / `downColor`; `close == open` counts as up | W | P0 |
+| TC-CANDLE-02 | Body width | `max(minBodyWidth, slotExtent × bodyWidthRatio)`; a flat candle body is at least 1 px tall | W | P1 |
+| TC-CANDLE-03 | Slot extent < 2 px | Body collapses to a 1 px line | W | P2 |
+| TC-CANDLE-04 | Wick spans high to low | Pixel-correct | G | P1 |
+| TC-CANDLE-05 | Any OHLC value is NaN | Candle skipped; extent ignores it | W | P0 |
+| TC-CANDLE-06 | `onTap` / `onHover` | Tap reports the index; hover enter reports the index, exit reports `null` | W | P0 |
+| TC-HIST-01 | Bars scale to the local maximum within the visible range; strip height is `heightFraction` of the viewport | Tallest visible bar fills the strip | W | P0 |
+| TC-HIST-02 | All visible values ≤ 0 or NaN | Nothing drawn | W | P1 |
+| TC-HIST-03 | `onTap` / `onHover` | As TC-CANDLE-06 | W | P1 |
+| TC-LINE-01 | Segments between consecutive finite points | One segment per pair; correct start, length and angle | W | P0 |
+| TC-LINE-02 | NaN in the middle of the series (R-DATA-8) | Line breaks; no segment across the gap | W | P0 |
+| TC-LINE-03 | `fill: true` | Fill strips under the line in a 15 % alpha of the line colour | G | P2 |
+| TC-LINE-04 | Point hit targets | Built only when `onPointTap` or `onPointHover` is set; 12 px targets centred on points | W | P1 |
+| TC-LINE-05 | ✅ `latestPointBuilder` with the last datum visible | Builder called with the last datum and index; marker rendered (`test/latest_point_test.dart`) | W | P0 |
+| TC-LINE-06 | `latestPointBuilder` with the last datum scrolled out of view | Builder not called; no marker | W | P0 |
+| TC-LINE-07 | `latestPointBuilder` when the last value is NaN | No marker | W | P1 |
+| TC-LINE-08 | Marker position | Marker centre equals `(xOf(last), yOf(value))` for odd and even marker sizes | W | P0 |
+| TC-LINE-09 | Marker ignores pointer events | Hover and drag over the marker behave as if it were not there | W | P0 |
+| TC-LINE-10 | Live tick moves the last value | Marker moves with it; a stateful marker (e.g. animation) keeps its state across ticks | W | P1 |
+
+### 9. Crosshair and readouts (§9)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-CROSS-01 | Mouse hover over a real slot | Vertical and horizontal lines, value badge (2 decimals), time badge | W | P0 |
+| TC-CROSS-02 | Mouse exit | Crosshair cleared | W | P0 |
+| TC-CROSS-03 | Long-press drag on touch | Crosshair follows; cleared on release | W | P0 |
+| TC-CROSS-04 | Tap | Crosshair placed at the tapped slot | W | P1 |
+| TC-CROSS-05 | Hover over a projected slot (R-TIME-29) | Time badge only, using the projected time; no value line or badge | W | P0 |
+| TC-CROSS-06 | ✅ (fixed) `onIndexHighlighted` over a projected slot | Spec: reports `null`. Current code reports the raw projected index | W | P1 |
+| TC-CROSS-07 | `crosshairEnabled: false` | No crosshair on hover, tap or long-press | W | P0 |
+| TC-CROSS-08 | `CrosshairLayer` without `valueOf` / `timeOf` | Missing badges are omitted; no exception | W | P1 |
+| TC-CROSS-09 | Hover left of the first slot | Highlight cleared | W | P2 |
+| TC-CROSS-10 | Badges near viewport edges | Badges are not clipped | W, G | P1 |
+
+### 10. Controller and callbacks (§10)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-CTRL-01 | Getters before attach | `visibleRange == (0, 0)`, `slotExtent == 0`, `autoscale == true`, `highlightedIndex == null`; methods are no-ops | U | P0 |
+| TC-CTRL-02 | Listener notifications | Controller notifies on pan, zoom, highlight and autoscale changes | W | P0 |
+| TC-CTRL-03 | `setAutoscale(false/true)` | Reflected in `autoscale`; the y extent behaves accordingly | W | P0 |
+| TC-CTRL-04 | `jumpToLatest()` | Scrolls to the newest datum; slot extent unchanged | W | P0 |
+| TC-CTRL-05 | ✅ `jumpToLatest(slotExtent: 8)` after zooming | Slot extent 8, view ends at the newest datum (`test/jump_to_latest_test.dart`) | W | P0 |
+| TC-CTRL-06 | `jumpToLatest(slotExtent:)` with a value outside min/max | Clamped | W | P1 |
+| TC-CTRL-07 | `clearHighlight()` | Crosshair removed | W | P1 |
+| TC-CTRL-08 | Swap the controller instance on the widget | Old one detached, new one attached; no events delivered to the old one | W | P0 |
+| TC-CTRL-09 | No controller passed | An internal one is created and disposed with the widget | W | P1 |
+| TC-CTRL-10 | Dispose the controller | Listener removed from the context; no leaks (`LeakTracker`) | W | P1 |
+| TC-CB-01 | `onVisibleRangeChanged` on first layout | Called exactly once after the first frame with the initial range | W | P0 |
+| TC-CB-02 | `onVisibleRangeChanged` on pan and zoom | Called with the new range | W | P0 |
+| TC-CB-03 | Data updates without user input | Behaviour is defined and documented (today: no call from `setSlotCount`) | W | P1 |
+| TC-CB-04 | `onIndexHighlighted` | Called with the index on hover and `null` on exit | W | P0 |
+
+### 11. Paging integration (§4.4, R-TEST-8)
+
+The library has no paging API yet, so these cases test the documented
+pattern: a caller drives loading from `onVisibleRangeChanged`. Write them
+against a small test harness that implements that pattern, and move them to
+the library when a paging API exists.
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-PAGE-01 | Pan into the threshold zone | Exactly one load request | W | P0 |
+| TC-PAGE-02 | Dwell or keep panning in the zone while a request is in flight (R-PAGE-7) | No second request | W | P0 |
+| TC-PAGE-03 | Regression: page lands while the view is at the left edge | View shifts by the page size and no further request fires without user input (no cascade) | W | P0 |
+| TC-PAGE-04 | Exhausted latch (R-PAGE-8) | No request after the source reports exhausted | W | P0 |
+| TC-PAGE-05 | Page too small to clear the threshold (R-PAGE-9) | Requests stop at a defined cap | W | P1 |
+| TC-PAGE-06 | Widget disposed while a request is in flight (R-PAGE-11) | Result discarded; no `setState` after dispose | W | P0 |
+| TC-PAGE-07 | Prepend during an active fling (R-PAGE-13) | Fling neither jumps nor stops | W | P1 |
+| TC-PAGE-08 | Prepend outside the visible range (R-PAGE-19) | Value extent and on-screen tick marks unchanged | W | P0 |
+| TC-PAGE-09 | Live append arrives while a page is loading | Both applied; view stable; order of data correct | W | P0 |
+| TC-PAGE-10 | Opened at `ChartAnchor.left` | Initial announce triggers at most one load (documented deviation from R-PAGE-4) | W | P1 |
+
+### 12. Live data
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-LIVE-01 | One-second ticks updating the last bar for 60 s (fake clock) | Last bar updates each tick; viewport stable; no exceptions | W | P0 |
+| TC-LIVE-02 | Bar rollover at a 10-second boundary | New bar appended; projected slots continue at 10 s cadence | W | P0 |
+| TC-LIVE-03 | Ticks while the user is mid-drag or mid-pinch | Gesture continues without a jump | W | P0 |
+| TC-LIVE-04 | Ticks while the crosshair is shown | Crosshair stays on the same index; readout updates if it is the last bar | W | P1 |
+| TC-LIVE-05 | One hour of ticks (3 600 updates) | Frame time and memory stay flat | P | P1 |
+
+### 13. Web scroll guard
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-WEB-01 | Wheel with `deltaX != 0` inside the chart bounds | `preventDefault()` called | I | P0 |
+| TC-WEB-02 | Same event outside the chart bounds | Not prevented | I | P0 |
+| TC-WEB-03 | Vertical-only wheel inside the chart | Not prevented | I | P0 |
+| TC-WEB-04 | Chart disposed | Listener removed; later events are not prevented | I | P0 |
+| TC-WEB-05 | Two charts on one page | Each guards only its own bounds | I | P1 |
+| TC-WEB-06 | Non-web build | Stub used; no `dart:js_interop` import in the compiled app | U | P1 |
+| TC-WEB-07 | ⚠ Flutter view embedded at an offset in a host page | Spec-level expectation: guarded correctly. Current code assumes a full-page view | I | P2 |
+| TC-WEB-08 | Chrome, Safari and Firefox, macOS trackpad swipe | No back/forward navigation while over the chart; works normally outside it | M | P0 |
+
+### 14. Lifecycle and robustness
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-LIFE-01 | Dispose mid-gesture, mid-animation and with a pending post-frame callback | No exceptions; no `setState` after dispose | W | P0 |
+| TC-LIFE-02 | Change the `layers` list (add, remove, swap type) between builds | Renders the new set; autoscale recomputed | W | P0 |
+| TC-LIFE-03 | Change `valueAxis` / `timeAxis` from present to `null` and back at runtime | Layout updates without exceptions | W | P0 |
+| TC-LIFE-04 | Change `initialAnchor` / `initialSlotExtent` after mount | Ignored (initial-only); documented | W | P1 |
+| TC-LIFE-05 | Zero-size and unbounded constraints | Zero size renders nothing; unbounded gives a clear assertion message | W | P1 |
+| TC-LIFE-06 | Theme change (light ↔ dark) | Colours from caller-provided config update; state kept | W | P1 |
+| TC-LIFE-07 | Very large values (1e12) and very small (1e-8) | Labels format; no overflow or precision collapse in scales | U | P1 |
+| TC-LIFE-08 | Memory leak check over mount/unmount cycles | No leaked controllers, listeners or tickers (`leak_tracker`) | W | P1 |
+
+### 15. Performance (§11)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-PERF-01 | R-PERF-3 budget: 60 visible candles, 3 lines, grid, crosshair, 50k data loaded, on a 2020-class mobile device | ≤ 8 ms per frame for build + layout + paint during pan. Expect this to fail with the widget-per-slot design; the result decides whether to move to render objects | P | P0 |
+| TC-PERF-02 | Per-frame work during pan with 1k vs 50k items | Frame time independent of data length (R-PERF-2) | P | P0 |
+| TC-PERF-03 | Zoomed fully out (slot extent 1 px) on a wide desktop viewport | Frame time recorded; worst case documented | P | P1 |
+| TC-PERF-04 | Crosshair movement | Measures whether candles rebuild on hover (R-PERF-4). Expected to rebuild today | P | P1 |
+| TC-PERF-05 | Live feed at 1 tick/s with 10k items | Frame time per tick within budget; time-tick rebuild cost recorded | P | P1 |
+
+### 16. Visual regression (goldens, R-TEST-5)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-GOLD-01 | Each layer alone on a fixed dataset and zoom, light and dark | Matches golden | G | P1 |
+| TC-GOLD-02 | All four axis placements | Matches golden | G | P1 |
+| TC-GOLD-03 | Time axis at each zoom bucket of a daily series | Matches golden | G | P1 |
+| TC-GOLD-04 | Crosshair over a real slot and over a projected slot | Matches golden | G | P1 |
+| TC-GOLD-05 | Line with gaps, fill, and a latest-point marker | Matches golden | G | P2 |
+
+### 17. Platforms (§12)
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-PLAT-01 | Web (Chrome, Safari, Firefox): pan, wheel zoom, trackpad pan and pinch, crosshair | All work; no console errors | I | P0 |
+| TC-PLAT-02 | macOS / Windows desktop: mouse, wheel, trackpad | All work | I | P1 |
+| TC-PLAT-03 | iOS / Android: drag, pinch, long-press crosshair, tap | All work; no conflict with system back gestures | I | P0 |
+| TC-PLAT-04 | High-DPI displays (DPR 1, 2, 3) | 1 px lines stay crisp; no gaps between segments | M, G | P1 |
+
+### 18. Widgetbook demo smoke test (R-TEST-6)
+
+Manual, run before each release against `widgetbook/`. It checks the demo
+still exercises every feature; it doesn't replace the automated cases above.
+
+| ID | Case | Expected | Lvl | Pri |
+|---|---|---|---|---|
+| TC-DEMO-01 | Open "Interactive chart" | Candles, volume, MA and axes render; feed shows Live and ticks every second | M | P1 |
+| TC-DEMO-02 | Candles / Line toggle | Series switches; pulsing dot on the latest line point | M | P1 |
+| TC-DEMO-03 | Pan to the left edge | Spinner shows top-left, one page loads, view does not jump; stops after 10 pages | M | P1 |
+| TC-DEMO-04 | Pause, wait 30 s, resume | Missed bars filled flat; cadence stays 10 s | M | P1 |
+| TC-DEMO-05 | Zoom in, then "Jump to latest" | Zoom resets to the initial slot extent and the view shows the newest bar | M | P1 |
+| TC-DEMO-06 | Each knob, and the theme toggle | Applies (use case is recreated, by design of Widgetbook) | M | P2 |
+
+### Exit criteria for production readiness
+
+- All P0 cases written and passing in CI on every pull request (unit, widget
+  and goldens on Linux; web integration on Chrome).
+- All P1 cases written; any failures have an issue and an owner.
+- Every ⚠ case resolved: either the code is fixed, or the deviation is
+  accepted and documented in this file.
+- TC-PERF-01 measured on a real device, with the result recorded here and an
+  architecture decision taken if it misses the budget.
+- Line coverage of `lib/src/` at 90 % or more, with no untested public API.
+- TC-PLAT-01 and TC-PLAT-03 run on real browsers and devices within the
+  release window.

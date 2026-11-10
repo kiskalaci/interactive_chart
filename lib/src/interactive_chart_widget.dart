@@ -77,6 +77,11 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   int? _lastAutoscaleEnd;
   int _lastDataLength = -1;
 
+  /// Set whenever the parent rebuilds this widget (new data, in-place edits
+  /// or different layers), so autoscale re-reads the visible values even if
+  /// the visible range and the data length are unchanged (R-SCALE-10).
+  bool _autoscaleDirty = true;
+
   double? _lastTickSlotExtentBucket;
   int _lastTickSlotCount = -1;
 
@@ -123,6 +128,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   @override
   void didUpdateWidget(covariant InteractiveChart<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _autoscaleDirty = true;
     if (widget.data.length != oldWidget.data.length) {
       // R-DATA-9: appending/changing data must not reset pan/zoom.
       ctx.setSlotCount(
@@ -161,7 +167,10 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   void _onContextChanged() {
     widget.onVisibleRangeChanged?.call(ctx.visibleStart, ctx.visibleEnd);
-    widget.onIndexHighlighted?.call(ctx.highlightedIndex);
+    // R-TIME-29: a projected (data-less) slot has no datum to report.
+    widget.onIndexHighlighted?.call(
+      ctx.highlightedProjectedTime == null ? ctx.highlightedIndex : null,
+    );
     // POC simplification of R-PERF-1/R-LAYOUT-2: a real implementation keeps
     // this to render-object markNeedsPaint and never rebuilds the widget
     // tree. Rebuilding here is simple and correct but costs more than
@@ -200,7 +209,9 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
       final e = ctx.visibleEnd;
       if (s != _lastAutoscaleStart ||
           e != _lastAutoscaleEnd ||
-          widget.data.length != _lastDataLength) {
+          widget.data.length != _lastDataLength ||
+          _autoscaleDirty) {
+        _autoscaleDirty = false;
         _lastAutoscaleStart = s;
         _lastAutoscaleEnd = e;
         _lastDataLength = widget.data.length;
