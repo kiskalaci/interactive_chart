@@ -13,6 +13,8 @@
 
 import 'package:interactive_chart_widgetbook/widgets/interactive_chart_widgetbook.dart'
     as _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook;
+import 'package:interactive_chart_widgetbook/widgets/time_marks_widgetbook.dart'
+    as _interactive_chart_widgetbook_widgets_time_marks_widgetbook;
 import 'package:widgetbook/widgetbook.dart' as _widgetbook;
 
 final directories = <_widgetbook.WidgetbookNode>[
@@ -24,6 +26,11 @@ final directories = <_widgetbook.WidgetbookNode>[
         builder:
             _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook
                 .interactiveChartUseCase,
+      ),
+      _widgetbook.WidgetbookUseCase(
+        name: 'Time mark weights',
+        builder: _interactive_chart_widgetbook_widgets_time_marks_widgetbook
+            .timeMarkWeightsUseCase,
       ),
     ],
   ),
