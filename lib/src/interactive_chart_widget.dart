@@ -96,6 +96,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   double? _gestureStartSlotExtent;
   double? _gestureStartContentPixelAtFocal;
+  double? _gestureStartFocalX;
 
   final _viewportKey = GlobalKey();
   late final ScrollGuard _scrollGuard;
@@ -301,6 +302,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   void _onScaleStart(ScaleStartDetails details) {
     _gestureStartSlotExtent = ctx.slotExtent;
     final focalX = details.localFocalPoint.dx;
+    _gestureStartFocalX = focalX;
     _gestureStartContentPixelAtFocal = ctx.scrollOffset + focalX;
   }
 
@@ -319,11 +321,14 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
           )
         : startExtent;
 
-    final focalX = details.localFocalPoint.dx;
+    // With panning on, the content under the gesture's start focal point
+    // follows the fingers. With panning off, a zoom stays anchored at the
+    // *start* focal point, so a one-finger drag (scale 1) cannot scroll.
+    final focalX = widget.panEnabled
+        ? details.localFocalPoint.dx
+        : (_gestureStartFocalX ?? details.localFocalPoint.dx);
     final newContentPixelAtFocal = domainIndexAtFocal * newSlotExtent;
-    final newScrollOffset = widget.panEnabled || widget.zoomEnabled
-        ? newContentPixelAtFocal - focalX
-        : ctx.scrollOffset;
+    final newScrollOffset = newContentPixelAtFocal - focalX;
 
     ctx.setSlotExtentAndScroll(newSlotExtent, newScrollOffset);
 
@@ -334,6 +339,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   void _onScaleEnd(ScaleEndDetails details) {
     _gestureStartSlotExtent = null;
+    _gestureStartFocalX = null;
     _gestureStartContentPixelAtFocal = null;
   }
 

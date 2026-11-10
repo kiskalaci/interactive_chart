@@ -38,6 +38,9 @@ class ChartHarness<T> {
     this.slotExtent = 8,
     this.minSlotExtent = 1,
     this.maxSlotExtent = 64,
+    this.panEnabled = true,
+    this.zoomEnabled = true,
+    this.crosshairEnabled = true,
     this.valueAxis = const ValueAxisConfig(),
     this.timeAxis = const TimeAxisConfig(),
   });
@@ -47,6 +50,9 @@ class ChartHarness<T> {
   final ChartAnchor anchor;
   final double slotExtent;
   final double minSlotExtent;
+  final bool panEnabled;
+  final bool zoomEnabled;
+  final bool crosshairEnabled;
   final double maxSlotExtent;
   final ValueAxisConfig? valueAxis;
   final TimeAxisConfig? timeAxis;
@@ -68,6 +74,9 @@ class ChartHarness<T> {
               initialSlotExtent: slotExtent,
               minSlotExtent: minSlotExtent,
               maxSlotExtent: maxSlotExtent,
+              panEnabled: panEnabled,
+              zoomEnabled: zoomEnabled,
+              crosshairEnabled: crosshairEnabled,
               valueAxis: valueAxis,
               timeAxis: timeAxis,
               layers: [...?layers?.call(), ContextProbe<T>((c) => ctx = c)],

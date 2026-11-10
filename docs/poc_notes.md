@@ -94,6 +94,8 @@ Tests: `flutter test` from the package root.
 - **Visible range is exact.** `[visibleStart, visibleEnd)` holds precisely the
   slots that overlap the viewport; a slot starting on the right edge is not
   counted.
+- **`panEnabled: false` really disables dragging.** A zoom then stays
+  anchored at the gesture's start focal point.
 - **Re-enabling autoscale rescales immediately**, including after a manual
   value zoom and on double-tap of the value axis.
 - **Value-axis ticks use the 1/2/2.5/5/10 ladder** (R-AXIS-8).
@@ -351,23 +353,47 @@ spans `value ± 0.5` before padding.
 
 ### 4. Pan and zoom gestures (§6)
 
+Implemented in `test/gestures_test.dart` (TC-GEST-02 stays in
+`test/prepend_test.dart`), all passing. Writing them found one more bug, now
+fixed: with `panEnabled: false` and `zoomEnabled: true`, a one-finger drag
+still scrolled the chart, because the scroll offset followed the moving focal
+point even at scale 1. With panning off, a zoom now stays anchored at the
+gesture's *start* focal point (TC-GEST-10).
+
+Behaviours the tests pin down, worth knowing when writing more:
+
+- Flutter's scale recogniser only starts after a pan slop of about 36 px (or
+  an 18 px span change) and then re-bases from that point, so a drag pans by
+  the distance moved *after* the slop. `tester.drag` compensates for this;
+  hand-built drags do not.
+- Pointer events arrive one pointer at a time, so at the moment a pinch is
+  accepted the midpoint can be off by half a step. The tests therefore use
+  small steps (about 2 px of span) and a 1 px tolerance in the starting slot
+  size.
+- Inside a vertical `ListView`, a vertical drag over the chart scrolls the
+  page (the list's drag recogniser wins at 18 px), so vertical value panning
+  is not available there; a horizontal drag still pans the chart, and the
+  wheel still zooms it.
+- Trackpad pinch and two-finger pan arrive as `PointerPanZoom*` events and
+  work through the same scale handler.
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-GEST-01 | Horizontal drag | Pans x by the drag distance; clamped at both ends | W | P0 |
+| TC-GEST-01 | ✅ Horizontal drag | Pans x by the drag distance; clamped at both ends | W | P0 |
 | TC-GEST-02 | ✅ Purely horizontal drag | Autoscale stays on (`test/prepend_test.dart`) | W | P0 |
-| TC-GEST-03 | Drag with vertical movement | Pans the value extent and switches autoscale off (documented deviation from R-SCROLL-6) | W | P0 |
-| TC-GEST-04 | Two-finger pinch, focal point fixed | Datum under the focal point stays under it (< 0.5 px) through the whole gesture | W | P0 |
-| TC-GEST-05 | Sustained pinch over 100+ update events | No cumulative drift (gesture-start reference) | W | P0 |
-| TC-GEST-06 | Pinch past `minSlotExtent` / `maxSlotExtent` | Clamped; focal point still held at the clamp | W | P0 |
-| TC-GEST-07 | Vertical-dominant mouse wheel | Zooms x anchored at the pointer | W | P0 |
-| TC-GEST-08 | Horizontal-dominant wheel or trackpad scroll | Pans x; no zoom | W | P0 |
-| TC-GEST-09 | Vertical-only wheel with `zoomEnabled: false` | Pans x | W | P0 |
-| TC-GEST-10 | `panEnabled: false` | Drag and horizontal scroll do nothing; zoom still works | W | P0 |
-| TC-GEST-11 | `zoomEnabled: false` | Pinch and wheel do not change slot extent | W | P0 |
-| TC-GEST-12 | Both disabled | No gesture changes the viewport; crosshair still works | W | P1 |
-| TC-GEST-13 | Trackpad pinch (`PointerPanZoom*` events on desktop) | Zooms anchored, same as touch pinch | W | P1 |
-| TC-GEST-14 | Fling / fast drag | Ends clamped, no overshoot past limits | W | P2 |
-| TC-GEST-15 | Chart inside a scrollable parent (`ListView`) | Horizontal drag pans the chart; vertical page scroll behaviour is defined and documented | W | P1 |
+| TC-GEST-03 | ✅ Drag with vertical movement | Pans the value extent and switches autoscale off (documented deviation from R-SCROLL-6) | W | P0 |
+| TC-GEST-04 | ✅ Two-finger pinch, focal point fixed | Datum under the focal point stays under it (< 0.5 px) through the whole gesture | W | P0 |
+| TC-GEST-05 | ✅ Sustained pinch over 100+ update events | No cumulative drift (gesture-start reference) | W | P0 |
+| TC-GEST-06 | ✅ Pinch past `minSlotExtent` / `maxSlotExtent` | Clamped; focal point still held at the clamp | W | P0 |
+| TC-GEST-07 | ✅ Vertical-dominant mouse wheel | Zooms x anchored at the pointer | W | P0 |
+| TC-GEST-08 | ✅ Horizontal-dominant wheel or trackpad scroll | Pans x; no zoom | W | P0 |
+| TC-GEST-09 | ✅ Vertical-only wheel with `zoomEnabled: false` | Pans x | W | P0 |
+| TC-GEST-10 | ✅ `panEnabled: false` | Drag and horizontal scroll do nothing; zoom still works | W | P0 |
+| TC-GEST-11 | ✅ `zoomEnabled: false` | Pinch and wheel do not change slot extent | W | P0 |
+| TC-GEST-12 | ✅ Both disabled | No gesture changes the viewport; crosshair still works | W | P1 |
+| TC-GEST-13 | ✅ Trackpad pinch (`PointerPanZoom*` events on desktop) | Zooms anchored, same as touch pinch | W | P1 |
+| TC-GEST-14 | ✅ Fling / fast drag | Ends clamped, no overshoot past limits | W | P2 |
+| TC-GEST-15 | ✅ Chart inside a scrollable parent (`ListView`) | Horizontal drag pans the chart; vertical page scroll behaviour is defined and documented | W | P1 |
 
 ### 5. Axes and axis gutters (§7.1–7.2, R-ZOOM-2, R-SCROLL-6..8)
 
