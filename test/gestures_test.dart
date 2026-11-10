@@ -3,10 +3,11 @@
 // See docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 /// No axes, so the viewport is the whole widget and global x minus the
 /// widget's left edge is the viewport-local x.
@@ -167,7 +168,8 @@ void main() {
         await tester.pumpWidget(h.app(intSeries(0, 400)));
         await tester.pumpAndSettle();
         final origin = tester.getTopLeft(_chartFinder);
-        final empty = origin + const Offset(500, 40); // far from the line
+        final w = tester.getSize(_chartFinder).width;
+        final empty = origin + Offset(w * 0.7, 40); // far from the line
 
         final finger = await tester.startGesture(empty);
         for (var i = 1; i <= 10; i++) {
@@ -181,9 +183,9 @@ void main() {
         final before = h.ctx.slotExtent;
         await _pinch(
           tester,
-          center: origin + const Offset(400, 40),
-          startSpan: 100,
-          endSpan: 200,
+          center: origin + Offset(w * 0.5, 40),
+          startSpan: w * 0.3,
+          endSpan: w * 0.6,
         );
         expect(h.ctx.slotExtent, greaterThan(before * 1.5));
       });
@@ -212,6 +214,8 @@ void main() {
     expect(h.ctx.scrollOffset, closeTo(60, 2));
   });
 
+  // Pinch geometry is relative to the chart's width, so the same test runs on
+  // a phone-sized and a desktop-sized screen.
   group("pinch zoom", () {
     testWidgets("TC-GEST-04 the datum under the focal point stays put", (
       tester,
@@ -221,7 +225,8 @@ void main() {
       await tester.pumpAndSettle();
 
       final rect = tester.getRect(_chartFinder);
-      final center = Offset(rect.left + 400, rect.center.dy);
+      final w = rect.width;
+      final center = Offset(rect.left + w * 0.5, rect.center.dy);
       final fx = _localX(tester, center.dx);
       final indexBefore = h.ctx.fractionalIndexAtViewportX(fx);
       final extentBefore = h.ctx.slotExtent;
@@ -229,8 +234,8 @@ void main() {
       await _pinch(
         tester,
         center: center,
-        startSpan: 100,
-        endSpan: 300,
+        startSpan: w * 0.2,
+        endSpan: w * 0.6,
         release: false,
       );
       // Mid-gesture, not only at the end.
@@ -243,10 +248,16 @@ void main() {
 
     testWidgets("zooming out holds the focal point too", (tester) async {
       final h = await _pump(tester, slotExtent: 24);
-      await tester.drag(_chartFinder, const Offset(-900, 0));
+      // Deep enough into the data that zooming out never has to scroll past
+      // the first bar, whatever the width.
+      await tester.drag(
+        _chartFinder,
+        Offset(-tester.getSize(_chartFinder).width * 1.5, 0),
+      );
       await tester.pumpAndSettle();
       final rect = tester.getRect(_chartFinder);
-      final center = Offset(rect.left + 300, rect.center.dy);
+      final w = rect.width;
+      final center = Offset(rect.left + w * 0.5, rect.center.dy);
       final fx = _localX(tester, center.dx);
       final indexBefore = h.ctx.fractionalIndexAtViewportX(fx);
       final extentBefore = h.ctx.slotExtent;
@@ -254,8 +265,8 @@ void main() {
       await _pinch(
         tester,
         center: center,
-        startSpan: 300,
-        endSpan: 150,
+        startSpan: w * 0.6,
+        endSpan: w * 0.3,
         release: false,
       );
       expect(h.ctx.slotExtent, lessThan(extentBefore));
@@ -265,7 +276,7 @@ void main() {
       );
     });
 
-    testWidgets("TC-GEST-05 no cumulative drift over 150 update events", (
+    testWidgets("TC-GEST-05 no cumulative drift over many update events", (
       tester,
     ) async {
       final h = await _pump(tester);
@@ -273,27 +284,28 @@ void main() {
       await tester.pumpAndSettle();
 
       final rect = tester.getRect(_chartFinder);
-      final center = Offset(rect.left + 350, rect.center.dy);
+      final w = rect.width;
+      final center = Offset(rect.left + w * 0.3, rect.center.dy);
       final startFx = _localX(tester, center.dx);
       final index = h.ctx.fractionalIndexAtViewportX(startFx);
       final extentBefore = h.ctx.slotExtent;
 
-      // Pinch out while the midpoint also drifts 120 px right.
+      // Pinch out (3x) while the midpoint also drifts right by 20 % of the
+      // width. Small steps, so there are well over a hundred update events.
+      final drift = w * 0.2;
       await _pinch(
         tester,
         center: center,
-        startSpan: 120,
-        endSpan: 360,
-        steps: 150,
-        pan: const Offset(120, 0),
+        startSpan: w * 0.25,
+        endSpan: w * 0.75,
+        pan: Offset(drift, 0),
         release: false,
       );
 
-      final endFx = startFx + 120;
       // The content that was under the starting midpoint is still under the
       // (moved) midpoint.
       expect(
-        h.ctx.fractionalIndexAtViewportX(endFx),
+        h.ctx.fractionalIndexAtViewportX(startFx + drift),
         closeTo(index, 1 / extentBefore),
       );
       // And the zoom matches the span ratio, not an accumulated error.
@@ -308,15 +320,16 @@ void main() {
       await tester.pumpAndSettle();
 
       final rect = tester.getRect(_chartFinder);
-      final center = Offset(rect.left + 400, rect.center.dy);
+      final w = rect.width;
+      final center = Offset(rect.left + w * 0.5, rect.center.dy);
       final fx = _localX(tester, center.dx);
       final index = h.ctx.fractionalIndexAtViewportX(fx);
 
       await _pinch(
         tester,
         center: center,
-        startSpan: 80,
-        endSpan: 700,
+        startSpan: w * 0.1,
+        endSpan: w * 0.9,
         release: false,
       );
       expect(h.ctx.slotExtent, 20);
@@ -329,30 +342,37 @@ void main() {
     ) async {
       final h = await _pump(tester, maxSlotExtent: 20, minSlotExtent: 4);
       final rect = tester.getRect(_chartFinder);
-      final center = Offset(rect.left + 400, rect.center.dy);
+      final w = rect.width;
+      final center = Offset(rect.left + w * 0.5, rect.center.dy);
       final start = h.ctx.slotExtent;
+      final low = w * 0.1;
+      final high = w * 0.95;
+      final step = w * 0.05;
 
       final a = await tester.startGesture(
-        center - const Offset(40, 0),
+        center - Offset(low / 2, 0),
         pointer: 1,
       );
       final b = await tester.startGesture(
-        center + const Offset(40, 0),
+        center + Offset(low / 2, 0),
         pointer: 2,
       );
       // Far past the maximum...
-      for (var s = 80.0; s <= 800; s += 40) {
+      for (var s = low; s <= high; s += step) {
         await a.moveTo(center - Offset(s / 2, 0));
         await b.moveTo(center + Offset(s / 2, 0));
         await tester.pump();
       }
       expect(h.ctx.slotExtent, 20);
       // ...and back to the starting span.
-      for (var s = 800.0; s >= 80; s -= 40) {
+      for (var s = high; s >= low; s -= step) {
         await a.moveTo(center - Offset(s / 2, 0));
         await b.moveTo(center + Offset(s / 2, 0));
         await tester.pump();
       }
+      await a.moveTo(center - Offset(low / 2, 0));
+      await b.moveTo(center + Offset(low / 2, 0));
+      await tester.pump();
       expect(h.ctx.slotExtent, closeTo(start, 0.5));
       await a.up();
       await b.up();
@@ -364,8 +384,8 @@ void main() {
       await _pinch(
         tester,
         center: rect.center,
-        startSpan: 600,
-        endSpan: 40,
+        startSpan: rect.width * 0.8,
+        endSpan: rect.width * 0.1,
         release: false,
       );
       expect(h.ctx.slotExtent, 4);

@@ -2,10 +2,11 @@
 // TC-CTRL-05 is in test/jump_to_latest_test.dart. See docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 final _chartFinder = find.byType(InteractiveChart<int>);
 
@@ -22,13 +23,14 @@ Widget _app(
   void Function(int, int)? onRange,
   void Function(int?)? onIndex,
   ChartAnchor anchor = ChartAnchor.left,
-  double width = 800,
+  double? width,
 }) => MaterialApp(
   home: Align(
     alignment: Alignment.topLeft,
     child: SizedBox(
-      width: width,
-      height: 400,
+      // Fills the screen unless a width is given.
+      width: width ?? double.infinity,
+      height: double.infinity,
       child: InteractiveChart<int>(
         controller: controller,
         data: data ?? intSeries(0, 600),
@@ -359,7 +361,7 @@ void main() {
       expect(calls.length, 1);
       expect(calls.single, c.visibleRange);
       expect(calls.single.$1, 0);
-      expect(calls.single.$2, greaterThan(50));
+      expect(calls.single.$2, greaterThan(20));
     });
 
     testWidgets("TC-CB-02 called with the new range on pan and zoom", (
@@ -418,7 +420,7 @@ void main() {
             null,
             onRange: (s, e) => calls.add((s, e)),
             data: intSeries(50, 600),
-            width: 500,
+            width: screenOf(tester).width * 0.6,
           ),
         );
         await tester.pumpAndSettle();

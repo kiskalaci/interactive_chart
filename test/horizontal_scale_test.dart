@@ -1,11 +1,12 @@
 // Test plan section 2: horizontal scale, viewport and anchoring (TC-X-*).
 // See docs/poc_notes.md.
 import "package:flutter/widgets.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 InteractiveChartContext _ctx({
   int slots = 500,
@@ -155,11 +156,16 @@ void main() {
         await tester.pumpAndSettle();
         expect(h.ctx.scrollOffset, offset);
 
-        await tester.pumpWidget(h.app(intSeries(0, 510), width: 700));
+        final w = screenOf(tester).width;
+        await tester.pumpWidget(h.app(intSeries(0, 510), width: w * 0.8));
         await tester.pumpAndSettle();
         expect(h.ctx.scrollOffset, offset);
 
-        await tester.pumpWidget(h.app(intSeries(0, 510), width: 900));
+        await tester.pumpWidget(h.app(intSeries(0, 510), width: w * 0.6));
+        await tester.pumpAndSettle();
+        expect(h.ctx.scrollOffset, offset);
+
+        await tester.pumpWidget(h.app(intSeries(0, 510)));
         await tester.pumpAndSettle();
         expect(h.ctx.scrollOffset, offset);
       },
@@ -171,20 +177,23 @@ void main() {
       tester,
     ) async {
       final h = _bareHarness(anchor: ChartAnchor.left);
-      await tester.pumpWidget(h.app(intSeries(0, 100)));
+      // More bars than half a (large) viewport, so the overscroll rule applies.
+      await tester.pumpWidget(h.app(intSeries(0, 1000)));
       await tester.pumpAndSettle();
       // Drag far further than the content is long.
-      await tester.drag(
-        find.byType(InteractiveChart<int>),
-        const Offset(-3000, 0),
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 4; i++) {
+        await tester.drag(
+          find.byType(InteractiveChart<int>),
+          const Offset(-3000, 0),
+          warnIfMissed: false,
+        );
+        await tester.pumpAndSettle();
+      }
 
       final w = h.ctx.viewportWidth;
       expect(h.ctx.scrollOffset, h.ctx.maxScrollOffset);
       // The newest bar rests at the half-way point: no further.
-      expect(h.ctx.xOf(99), closeTo(w / 2 - h.ctx.slotExtent / 2, 0.01));
+      expect(h.ctx.xOf(999), closeTo(w / 2 - h.ctx.slotExtent / 2, 0.01));
     });
 
     testWidgets("TC-X-07 before the oldest datum is not allowed", (
@@ -248,7 +257,7 @@ void main() {
   });
 
   group("TC-X-09 viewport resize", () {
-    testWidgets("growing re-clamps the scroll offset", (tester) async {
+    testWidgetsOnce("growing re-clamps the scroll offset", (tester) async {
       useLargeSurface(tester);
       final h = _bareHarness(anchor: ChartAnchor.right);
       await tester.pumpWidget(h.app(intSeries(0, 500)));
@@ -270,16 +279,17 @@ void main() {
       await tester.pumpAndSettle();
       final wide = h.controller.visibleRange;
 
-      await tester.pumpWidget(h.app(intSeries(0, 500), width: 400));
+      final half = screenOf(tester).width / 2;
+      await tester.pumpWidget(h.app(intSeries(0, 500), width: half));
       await tester.pumpAndSettle();
       final narrow = h.controller.visibleRange;
 
       expect(narrow.$1, wide.$1);
       expect(narrow.$2 - narrow.$1, lessThan(wide.$2 - wide.$1));
-      expect(narrow.$2 - narrow.$1, closeTo(400 / 8, 1.5));
+      expect(narrow.$2 - narrow.$1, closeTo(half / 8, 1.5));
     });
 
-    testWidgets("to zero width and back", (tester) async {
+    testWidgetsOnce("to zero width and back", (tester) async {
       useLargeSurface(tester);
       final h = _bareHarness(anchor: ChartAnchor.left);
       await tester.pumpWidget(h.app(intSeries(0, 500)));

@@ -2,12 +2,13 @@
 // See docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/ticks.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 final _chartFinder = find.byType(InteractiveChart<int>);
 
@@ -429,8 +430,12 @@ void main() {
     // Daily bars from 2023-12-01 so there is a year boundary and month
     // boundaries in view, with room on both sides of each label.
     final start = DateTime(2023, 12, 1);
+    // Fit the 120 days on the screen, whatever its width, so the year and the
+    // February boundary are both in view.
+    final screenWidth = currentScreen?.screen.width ?? 800;
     final h = ChartHarness<int>(
       timeOf: (i) => start.add(Duration(days: i)),
+      slotExtent: (screenWidth - 100) / 120,
       valueAxis: const ValueAxisConfig(textStyle: valueStyle),
       timeAxis: const TimeAxisConfig(
         textStyle: normal,
@@ -453,7 +458,11 @@ void main() {
     final dayLabels = byLabel.entries.where(
       (e) => RegExp(r"^\d{1,2}$").hasMatch(e.key),
     );
-    expect(dayLabels, isNotEmpty);
+    // On a narrow screen all 120 days are squeezed together and the
+    // hierarchy rightly keeps only the coarser year and month marks.
+    if (screenWidth >= 600) {
+      expect(dayLabels, isNotEmpty);
+    }
     for (final e in dayLabels) {
       expect(e.value.color, normal.color);
     }

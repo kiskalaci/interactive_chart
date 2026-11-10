@@ -4,12 +4,13 @@
 import "dart:math" as math;
 
 import "package:flutter/widgets.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/ticks.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 /// Counts how often autoscale asks it for an extent.
 class _CountingLayer extends ChartLayer<int> {

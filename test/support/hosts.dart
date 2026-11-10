@@ -19,7 +19,7 @@ class PagingHost extends StatefulWidget {
     this.thresholdSlots = 20,
     this.maxPages = 1000,
     this.valueOf,
-    this.width = 800,
+    this.width,
     super.key,
   });
 
@@ -32,7 +32,7 @@ class PagingHost extends StatefulWidget {
   final int thresholdSlots;
   final int maxPages;
   final double Function(int id)? valueOf;
-  final double width;
+  final double? width;
 
   @override
   State<PagingHost> createState() => PagingHostState();
@@ -108,8 +108,9 @@ class PagingHostState extends State<PagingHost> {
     home: Align(
       alignment: Alignment.topLeft,
       child: SizedBox(
-        width: widget.width,
-        height: 400,
+        // Fills the screen unless a width is given.
+        width: widget.width ?? double.infinity,
+        height: double.infinity,
         child: InteractiveChart<int>(
           controller: controller,
           data: data,
@@ -210,8 +211,8 @@ class LiveHostState extends State<LiveHost> {
     home: Align(
       alignment: Alignment.topLeft,
       child: SizedBox(
-        width: 800,
-        height: 400,
+        width: double.infinity,
+        height: double.infinity,
         child: InteractiveChart<LiveBar>(
           controller: controller,
           data: bars,

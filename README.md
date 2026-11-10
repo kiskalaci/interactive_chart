@@ -22,5 +22,10 @@ After adding or changing use cases, regenerate with
 ## Tests
 
 ```
-flutter test
+flutter test                      # Dart VM
+flutter test --platform chrome    # a real browser
 ```
+
+Every widget test runs at five screen sizes (sm, m, l, xl, xxl) in a mobile
+and a browser environment; see "Screen sizes and environments" in
+[docs/poc_notes.md](docs/poc_notes.md).

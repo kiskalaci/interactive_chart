@@ -86,13 +86,32 @@ class InteractiveChartContext extends ChangeNotifier {
     contentExtent - viewportWidth + maxOverscrollPx,
   );
 
+  /// While set, the view is pinned to a position that depends on the viewport
+  /// width (the newest datum against the right edge), and is re-applied when
+  /// the width changes. Without it, a value-axis gutter that grows after the
+  /// view was placed (wider labels for a new range) narrows the viewport and
+  /// leaves the newest bar slightly out of view. Any scroll, zoom or data
+  /// change drops the pin.
+  double Function()? _pin;
+
+  /// Pins the view to the offset [offsetFor] returns, now and whenever the
+  /// viewport width changes, until the user or the data moves it.
+  void pinTo(double Function() offsetFor) {
+    _pin = offsetFor;
+  }
+
   void setViewportSize(double width, double height) {
     if (viewportWidth == width && viewportHeight == height) {
       return;
     }
+    final widthChanged = viewportWidth != width;
     viewportWidth = width;
     viewportHeight = height;
+    final wasApplied = _initialAnchorApplied;
     _applyInitialAnchorIfNeeded();
+    if (wasApplied && widthChanged && _pin != null) {
+      _scrollOffset = _pin!();
+    }
     _clampScroll();
     _recomputeVisibleRange();
   }
@@ -105,6 +124,9 @@ class InteractiveChartContext extends ChangeNotifier {
       return;
     }
     slotCount = count;
+    if (_initialAnchorApplied) {
+      _pin = null; // the data moved: the view no longer follows the edge
+    }
     if (_initialAnchorApplied && prepended > 0) {
       _scrollOffset += prepended * _slotExtent;
     }
@@ -121,9 +143,12 @@ class InteractiveChartContext extends ChangeNotifier {
       return;
     }
     _initialAnchorApplied = true;
-    _scrollOffset = initialAnchor == ChartAnchor.left
-        ? minScrollOffset
-        : maxScrollOffset;
+    if (initialAnchor == ChartAnchor.left) {
+      _scrollOffset = minScrollOffset;
+    } else {
+      _scrollOffset = maxScrollOffset;
+      pinTo(() => maxScrollOffset);
+    }
   }
 
   /// Sets slot extent (zoom) and scroll offset together, anchored — the
@@ -131,6 +156,7 @@ class InteractiveChartContext extends ChangeNotifier {
   /// reference (see the widget's scale-gesture handler) so a combined
   /// pan+pinch never drifts.
   void setSlotExtentAndScroll(double newSlotExtent, double newScrollOffset) {
+    _pin = null;
     _slotExtent = newSlotExtent.clamp(minSlotExtent, maxSlotExtent);
     _scrollOffset = newScrollOffset;
     _clampScroll();
@@ -139,6 +165,7 @@ class InteractiveChartContext extends ChangeNotifier {
   }
 
   void panBy(double deltaContentPx) {
+    _pin = null;
     _scrollOffset += deltaContentPx;
     _clampScroll();
     _recomputeVisibleRange();
@@ -164,6 +191,7 @@ class InteractiveChartContext extends ChangeNotifier {
   }
 
   void jumpTo(double offset) {
+    _pin = null;
     _scrollOffset = offset;
     _clampScroll();
     _recomputeVisibleRange();

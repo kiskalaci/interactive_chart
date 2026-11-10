@@ -49,13 +49,16 @@ class InteractiveChartController extends ChangeNotifier {
     }
     if (slotExtent == null) {
       ctx.jumpTo(ctx.contentExtent - ctx.viewportWidth);
-      return;
+    } else {
+      final clamped = slotExtent.clamp(ctx.minSlotExtent, ctx.maxSlotExtent);
+      ctx.setSlotExtentAndScroll(
+        clamped,
+        ctx.slotCount * clamped - ctx.viewportWidth,
+      );
     }
-    final clamped = slotExtent.clamp(ctx.minSlotExtent, ctx.maxSlotExtent);
-    ctx.setSlotExtentAndScroll(
-      clamped,
-      ctx.slotCount * clamped - ctx.viewportWidth,
-    );
+    // Stay against the right edge if the viewport narrows afterwards (for
+    // example when the value-axis gutter grows for the new range).
+    ctx.pinTo(() => ctx.contentExtent - ctx.viewportWidth);
   }
 
   void clearHighlight() => _ctx?.setHighlighted(null);

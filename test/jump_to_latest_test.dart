@@ -1,7 +1,9 @@
 import "package:flutter/material.dart";
 import "package:flutter/gestures.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
+
+import "support/variants.dart";
 
 void main() {
   testWidgets("jumpToLatest(slotExtent:) resets zoom and scrolls to the end", (

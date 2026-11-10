@@ -6,11 +6,12 @@ import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
 import "package:flutter/widgets.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/ticks.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 /// Daily bars with no gaps, from 2022-01-01.
 DateTime _day(int i) => DateTime(2022).add(Duration(days: i));
@@ -599,11 +600,20 @@ void main() {
         await tester.pumpAndSettle();
         final after = h.ctx.timeTicks;
 
-        // R-TIME-30: the mark set is identical (index, time, weight); only a
-        // mark sitting on bar 1000 changes from projected to real.
-        expect(_signature(after), _signature(before));
-        for (var i = 0; i < after.length; i++) {
+        // R-TIME-30: no mark that was already there changes (index, time and
+        // weight). Appending one bar extends the window by one slot, so a new
+        // mark can appear past the old end, but never before it.
+        final lastBefore = before.last.index;
+        expect(
+          _signature(after.where((m) => m.index <= lastBefore).toList()),
+          _signature(before),
+          reason: "an existing mark changed",
+        );
+        for (var i = 0; i < before.length; i++) {
           expect(after[i].time, before[i].time);
+        }
+        for (final m in after.where((m) => m.index > lastBefore)) {
+          expect(m.index, greaterThanOrEqualTo(1000));
         }
       },
     );

@@ -4,11 +4,12 @@
 // See docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/ticks.dart";
 
 import "support/hosts.dart";
+import "support/variants.dart";
 
 final _key = GlobalKey<LiveHostState>();
 final _chartFinder = find.byType(InteractiveChart<LiveBar>);
@@ -112,12 +113,15 @@ void main() {
 
   group("TC-LIVE-03 ticks during a gesture", () {
     testWidgets("a drag carries on without a jump", (tester) async {
-      await _pump(tester, anchor: ChartAnchor.left);
+      // Enough history to scroll on the widest screen.
+      await _pump(tester, anchor: ChartAnchor.left, history: 600);
       final origin = tester.getTopLeft(_chartFinder);
       final start = _host.ctx.scrollOffset;
-      final finger = await tester.startGesture(origin + const Offset(600, 200));
+      // Start well to the right so there is room to drag left 200 px.
+      final startX = tester.getSize(_chartFinder).width * 0.8;
+      final finger = await tester.startGesture(origin + Offset(startX, 200));
 
-      var x = 600.0;
+      var x = startX;
       for (var i = 0; i < 25; i++) {
         x -= 8; // dragging left moves further into the newest side
         await finger.moveTo(origin + Offset(x, 200));
@@ -128,7 +132,7 @@ void main() {
       expect(tester.takeException(), isNull);
       // 25 ticks added bars and updated the last one; the drag still moved the
       // view by exactly the distance travelled.
-      expect(_host.bars.length, 102);
+      expect(_host.bars.length, 602);
       expect(_host.ctx.scrollOffset, closeTo(start + 200, 0.5));
     });
 
@@ -232,7 +236,7 @@ void main() {
     });
   });
 
-  testWidgets("TC-LIVE-05 an hour of ticks: frame cost stays flat", (
+  testWidgetsOnce("TC-LIVE-05 an hour of ticks: frame cost stays flat", (
     tester,
   ) async {
     await _pump(tester);

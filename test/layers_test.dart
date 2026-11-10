@@ -5,11 +5,12 @@ import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 const _up = Color(0xFF00AA00);
 const _down = Color(0xFFAA0000);
@@ -116,7 +117,7 @@ void main() {
       expect(log, ["bottom"]);
     });
 
-    testWidgets(
+    testWidgetsOnce(
       "TC-LAYER-02 child count follows the visible slots, not the data",
       (tester) async {
         Future<int> boxCount(int n) async {

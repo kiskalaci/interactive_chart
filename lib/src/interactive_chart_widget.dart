@@ -112,6 +112,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   double? _lastTickSlotExtentBucket;
   int _lastTickSlotCount = -1;
+  int _lastTickProjectedCount = -1;
 
   double? _gestureStartSlotExtent;
   double? _gestureStartContentPixelAtFocal;
@@ -305,15 +306,22 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
       return;
     }
     final bucket = _quantizeSlotExtent(ctx.slotExtent);
+    // The overscroll region grows and shrinks with the viewport width, so the
+    // projected marks must follow (a window made wider needs labels further
+    // right). Rounded up to a multiple of 16 so a continuous resize does not
+    // rebuild the whole set on every pixel.
+    final projectedCount = (ctx.projectedSlotCount + 15) ~/ 16 * 16;
     if (bucket == _lastTickSlotExtentBucket &&
-        widget.data.length == _lastTickSlotCount) {
+        widget.data.length == _lastTickSlotCount &&
+        projectedCount == _lastTickProjectedCount) {
       return;
     }
     _lastTickSlotExtentBucket = bucket;
     _lastTickSlotCount = widget.data.length;
+    _lastTickProjectedCount = projectedCount;
 
     final realTimes = [for (final d in widget.data) widget.timeOf(d)];
-    final projected = projectTimes(realTimes, ctx.projectedSlotCount);
+    final projected = projectTimes(realTimes, projectedCount);
     ctx.timeTicks = buildTickMarks(
       times: [...realTimes, ...projected],
       realCount: realTimes.length,

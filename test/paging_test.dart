@@ -5,10 +5,11 @@
 import "dart:async";
 
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 import "support/hosts.dart";
 
 final _chartFinder = find.byType(InteractiveChart<int>);

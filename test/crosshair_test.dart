@@ -2,10 +2,11 @@
 // test/known_gaps_test.dart. See docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 const _lineColor = Color(0xFF111AAA);
 const _badgeColor = Color(0xFF222BBB);
@@ -137,11 +138,13 @@ void main() {
     testWidgets("minute bars show the time of day, not just the date", (
       tester,
     ) async {
-      final h = await _pump(tester);
-      await _hover(tester, _slotPoint(tester, h, 65)); // 01:05
+      DateTime morning(int i) =>
+          DateTime(2024, 1, 1, 9).add(Duration(minutes: i));
+      final h = await _pump(tester, timeOf: morning);
+      await _hover(tester, _slotPoint(tester, h, 12)); // 09:12
       final time = _badgeTexts(tester).firstWhere((t) => t.contains("-"));
       expect(time, contains("2024-01-01"));
-      expect(time, contains("01:05"));
+      expect(time, contains("09:12"));
     });
 
     testWidgets("second bars show seconds", (tester) async {

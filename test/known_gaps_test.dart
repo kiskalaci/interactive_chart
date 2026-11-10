@@ -4,10 +4,12 @@ import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/ticks.dart";
+
+import "support/variants.dart";
 
 class _CaptureLayer extends ChartLayer<double> {
   _CaptureLayer(this.onContext);

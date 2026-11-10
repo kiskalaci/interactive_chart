@@ -62,36 +62,43 @@ class ChartHarness<T> {
   final controller = InteractiveChartController();
   late InteractiveChartContext ctx;
 
-  Widget app(List<T> data, {double width = 800, double height = 400}) =>
-      MaterialApp(
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(textScale)),
-          child: child!,
+  /// The chart. By default it fills the whole screen, so tests run at
+  /// whatever size the active variant (see variants.dart) gives them; pass a
+  /// [width] and/or [height] to pin an exact size instead.
+  Widget app(List<T> data, {double? width, double? height}) {
+    final chart = InteractiveChart<T>(
+      controller: controller,
+      data: data,
+      timeOf: timeOf,
+      initialAnchor: anchor,
+      initialSlotExtent: slotExtent,
+      minSlotExtent: minSlotExtent,
+      maxSlotExtent: maxSlotExtent,
+      panEnabled: panEnabled,
+      zoomEnabled: zoomEnabled,
+      crosshairEnabled: crosshairEnabled,
+      valueAxis: valueAxis,
+      timeAxis: timeAxis,
+      layers: [...?layers?.call(), ContextProbe<T>((c) => ctx = c)],
+    );
+    return MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
+      // Same tree shape either way, so changing the size keeps the chart's
+      // State. An infinite size fills whatever the screen allows.
+      home: Center(
+        child: SizedBox(
+          width: width ?? double.infinity,
+          height: height ?? double.infinity,
+          child: chart,
         ),
-        home: Center(
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: InteractiveChart<T>(
-              controller: controller,
-              data: data,
-              timeOf: timeOf,
-              initialAnchor: anchor,
-              initialSlotExtent: slotExtent,
-              minSlotExtent: minSlotExtent,
-              maxSlotExtent: maxSlotExtent,
-              panEnabled: panEnabled,
-              zoomEnabled: zoomEnabled,
-              crosshairEnabled: crosshairEnabled,
-              valueAxis: valueAxis,
-              timeAxis: timeAxis,
-              layers: [...?layers?.call(), ContextProbe<T>((c) => ctx = c)],
-            ),
-          ),
-        ),
-      );
+      ),
+    );
+  }
 }
 
 /// Makes the test screen large enough for charts wider than the default

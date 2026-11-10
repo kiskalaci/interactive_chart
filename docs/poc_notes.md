@@ -17,7 +17,12 @@ flutter run -d chrome
 dart run build_runner build -d
 ```
 
-Tests: `flutter test` from the package root.
+Tests, from the package root:
+
+```
+flutter test                      # Dart VM, every widget test at 10 variants
+flutter test --platform chrome    # the same suite in a real browser (about 5 min)
+```
 
 ## What's implemented
 
@@ -101,6 +106,13 @@ Tests: `flutter test` from the package root.
   tiny chart drops axes that do not fit instead of overflowing.
 - **Unbounded constraints give a clear debug message.**
 - **Value labels show enough decimals** for tiny ranges and huge values.
+- **`jumpToLatest` and the right anchor stay against the right edge** when the
+  viewport narrows afterwards (for example when the value-axis gutter grows for
+  a new range). The view is pinned until the user, or a data change, moves it.
+- **Time-axis marks follow the viewport width.** The projected (overscroll)
+  region grows with the viewport, so the marks are rebuilt when its slot count
+  changes, rounded up to a multiple of 16 so a continuous window resize does
+  not rebuild them on every pixel.
 - **Axis gutters honour the text scale.**
 - **Equal-weight time marks are tie-broken by index**, so labels are stable
   when data is appended or the zoom changes.
@@ -262,6 +274,34 @@ everything else is still to write.
   from the requirement. Each needs a decision: fix the code, or accept the
   deviation and record it under "What's simplified or out of scope".
 
+### Screen sizes and environments
+
+Every widget test runs once per variant: five screen sizes in each of two
+environments, so 10 runs per test (`test/support/variants.dart`).
+
+| Size | Logical px | | Environment | Target platform | Pixel ratio |
+|---|---|---|---|---|---|
+| `sm` | 360 × 640 | | `mobile` | Android | 3× |
+| `m` | 768 × 1024 | | `browser` | macOS (a desktop browser) | 1× |
+| `l` | 1024 × 768 | | | | |
+| `xl` | 1440 × 900 | | | | |
+| `xxl` | 1920 × 1080 | | | | |
+
+- The shared harness (`ChartHarness.app`, and the `PagingHost` and `LiveHost`
+  helpers) makes the chart fill the screen, so layout, gestures and callbacks
+  are exercised at every width. Test geometry is therefore relative: use
+  `screenOf(tester)` or the chart's own size, never a fixed 800 px.
+- `testWidgets` (imported from `support/variants.dart`, hiding the framework's)
+  runs the matrix. `testWidgetsOnce` runs a single time at the default size, for
+  tests that set their own surface (`useLargeSurface`) or are heavy and
+  size-independent (the 50 000-bar layer test, the hour of live ticks).
+- The environments set the target platform and pixel ratio. Input devices are
+  still chosen by each test (mouse for hover and wheel, touch for drags and
+  pinch), so mouse-only tests also run in the `mobile` environment.
+- `flutter test --platform chrome` compiles the suite to JavaScript and runs
+  it in Chrome, which also exercises the web build of the package (the
+  `dart:js_interop` scroll guard) under the same matrix.
+
 ### Fixtures and conventions
 
 - **Data**: one deterministic generator per cadence (10 s, 1 min, 1 h, daily
@@ -317,6 +357,12 @@ found one bug, now fixed: when the viewport's right edge landed exactly on a
 slot boundary, `visibleEnd` included one extra slot that was not on screen
 (TC-X-02). The context now computes the range as
 `[floor(offset / extent), ceil((offset + width) / extent))`.
+
+Found by running the whole suite across screen sizes (not tied to one plan
+row): after `jumpToLatest()` the value-axis gutter could grow and narrow the
+viewport by about 11 px at `sm`, leaving the newest bar out of view, and the
+time-axis marks for the overscroll region were not rebuilt when the viewport
+grew wider. Both are fixed (see "What's implemented").
 
 Test-writing gotchas, handled in `test/support/chart_harness.dart`: a
 `SizedBox` wider than the default 800 px test screen is silently clamped (use

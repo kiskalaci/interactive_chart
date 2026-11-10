@@ -2,12 +2,13 @@
 // docs/poc_notes.md.
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
-import "package:flutter_test/flutter_test.dart";
+import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/ticks.dart";
 
 import "support/chart_harness.dart";
+import "support/variants.dart";
 
 final _chartFinder = find.byType(InteractiveChart<int>);
 
@@ -22,15 +23,16 @@ Widget _chart({
   TimeAxisConfig? timeAxis = const TimeAxisConfig(),
   InteractiveChartController? controller,
   bool crosshair = true,
-  double width = 800,
-  double height = 400,
+  double? width,
+  double? height,
   void Function(InteractiveChartContext)? onContext,
 }) => MaterialApp(
   home: Align(
     alignment: Alignment.topLeft,
     child: SizedBox(
-      width: width,
-      height: height,
+      // Fills the screen unless a size is given.
+      width: width ?? double.infinity,
+      height: height ?? double.infinity,
       child: InteractiveChart<int>(
         controller: controller,
         data: data ?? intSeries(0, 400),
@@ -252,22 +254,26 @@ void main() {
 
     await tester.pumpWidget(build(v, t));
     await tester.pumpAndSettle();
+    final full = tester.getSize(_chartFinder);
     final withBoth = (ctx.viewportWidth, ctx.viewportHeight);
-    expect(withBoth.$1, lessThan(800));
-    expect(withBoth.$2, 378);
+    expect(withBoth.$1, lessThan(full.width));
+    expect(withBoth.$2, full.height - 22);
 
     await tester.pumpWidget(build(null, t));
     await tester.pumpAndSettle();
-    expect((ctx.viewportWidth, ctx.viewportHeight), (800.0, 378.0));
+    expect(
+      (ctx.viewportWidth, ctx.viewportHeight),
+      (full.width, full.height - 22),
+    );
 
     await tester.pumpWidget(build(null, null));
     await tester.pumpAndSettle();
-    expect((ctx.viewportWidth, ctx.viewportHeight), (800.0, 400.0));
+    expect((ctx.viewportWidth, ctx.viewportHeight), (full.width, full.height));
 
     await tester.pumpWidget(build(v, null));
     await tester.pumpAndSettle();
-    expect(ctx.viewportWidth, lessThan(800));
-    expect(ctx.viewportHeight, 400);
+    expect(ctx.viewportWidth, lessThan(full.width));
+    expect(ctx.viewportHeight, full.height);
 
     await tester.pumpWidget(build(v, t));
     await tester.pumpAndSettle();
