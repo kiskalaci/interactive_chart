@@ -263,23 +263,31 @@ everything else is still to write.
 
 ### 1. Data model and data updates (§4.1, §4.3)
 
+Implemented in `test/data_model_test.dart` (shared helpers in
+`test/support/chart_harness.dart`), all passing. Two notes from writing
+them: TC-DATA-12 is "must not crash" only, because unsorted data is
+documented as undefined behaviour on `InteractiveChart.data`; and the right
+initial anchor is applied before the value-axis gutter has finished growing,
+so the first offset can sit up to a gutter-growth short of the final maximum
+(the newest bar is still in view; TC-DATA-15 asserts that tolerance).
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-DATA-01 | Chart with a custom datum type (record, plain class, `int`) | Renders through accessor functions only; no dependency on `Candle` | W | P0 |
-| TC-DATA-02 | Empty `data` list | No exception; no layers draw content; axes render without labels; visible range `(0, 0)` | W | P0 |
-| TC-DATA-03 | Single datum | Renders one slot; autoscale uses the degenerate-extent rule (TC-SCALE-04) | W | P0 |
-| TC-DATA-04 | Append one datum while the view is mid-history (R-DATA-9) | Visible range, slot extent and scroll offset unchanged | W | P0 |
-| TC-DATA-05 | Append while the view is at the right edge | View stays where it was (no follow mode, R-SCROLL-5 not implemented). Pin current behaviour so a future follow mode is a deliberate change | W | P1 |
+| TC-DATA-01 | ✅ Chart with a custom datum type (record, plain class, `int`) | Renders through accessor functions only; no dependency on `Candle` | W | P0 |
+| TC-DATA-02 | ✅ Empty `data` list | No exception; no layers draw content; axes render without labels; visible range `(0, 0)` | W | P0 |
+| TC-DATA-03 | ✅ Single datum | Renders one slot; autoscale uses the degenerate-extent rule (TC-SCALE-04) | W | P0 |
+| TC-DATA-04 | ✅ Append one datum while the view is mid-history (R-DATA-9) | Visible range, slot extent and scroll offset unchanged | W | P0 |
+| TC-DATA-05 | ✅ Append while the view is at the right edge | View stays where it was (no follow mode, R-SCROLL-5 not implemented). Pin current behaviour so a future follow mode is a deliberate change | W | P1 |
 | TC-DATA-06 | ✅ Prepend 120 items while at the left edge (R-DATA-10) | `visibleStart` moves from 0 to 120; same data stays on screen (`test/prepend_test.dart`) | W | P0 |
-| TC-DATA-07 | Prepend while mid-history and zoomed in | Visible range shifts by exactly the prepended count; on-screen x of a given datum unchanged to < 0.5 px | W | P0 |
-| TC-DATA-08 | Prepend and append in the same update | View shifts by the prepended count only | W | P0 |
-| TC-DATA-09 | Replace the data with an unrelated list of the same or larger length (old first timestamp not present) | Prepend count is 0; no shift, no exception | W | P0 |
-| TC-DATA-10 | Data shrinks (length decreases) | Scroll is re-clamped; visible range stays inside `[0, length)`; no index-out-of-range in any layer | W | P0 |
-| TC-DATA-11 | Duplicate timestamps at the old first position | Binary search finds the first match; documented result for the prepended count | U | P2 |
-| TC-DATA-12 | Unsorted data | Behaviour is documented (assert in debug mode, or define it as undefined). No crash | W | P2 |
-| TC-DATA-13 | In-place update of the last datum, same length (live tick) | New values are drawn on the next frame; viewport unchanged | W | P0 |
-| TC-DATA-14 | NaN / ±infinity values in each accessor (R-DATA-8) | Skipped in drawing and in extent; line breaks at the gap; no exception | W | P0 |
-| TC-DATA-15 | Prepend before the initial anchor has been applied (viewport still 0×0) | Initial anchor wins; no double shift | W | P1 |
+| TC-DATA-07 | ✅ Prepend while mid-history and zoomed in | Visible range shifts by exactly the prepended count; on-screen x of a given datum unchanged to < 0.5 px | W | P0 |
+| TC-DATA-08 | ✅ Prepend and append in the same update | View shifts by the prepended count only | W | P0 |
+| TC-DATA-09 | ✅ Replace the data with an unrelated list of the same or larger length (old first timestamp not present) | Prepend count is 0; no shift, no exception | W | P0 |
+| TC-DATA-10 | ✅ Data shrinks (length decreases) | Scroll is re-clamped; visible range stays inside `[0, length)`; no index-out-of-range in any layer | W | P0 |
+| TC-DATA-11 | ✅ Duplicate timestamps at the old first position | Binary search finds the first match; documented result for the prepended count | U | P2 |
+| TC-DATA-12 | ✅ Unsorted data | Behaviour is documented (assert in debug mode, or define it as undefined). No crash | W | P2 |
+| TC-DATA-13 | ✅ In-place update of the last datum, same length (live tick) | New values are drawn on the next frame; viewport unchanged | W | P0 |
+| TC-DATA-14 | ✅ NaN / ±infinity values in each accessor (R-DATA-8) | Skipped in drawing and in extent; line breaks at the gap; no exception | W | P0 |
+| TC-DATA-15 | ✅ Prepend before the initial anchor has been applied (viewport still 0×0) | Initial anchor wins; no double shift | W | P1 |
 
 ### 2. Horizontal scale, viewport and anchoring (§5, §6.1)
 

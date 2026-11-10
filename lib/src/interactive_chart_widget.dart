@@ -42,6 +42,10 @@ class InteractiveChart<T> extends StatefulWidget {
     super.key,
   });
 
+  /// The series, sorted oldest to newest by [timeOf]. Appending, updating the
+  /// last datum and prepending older data keep the current pan and zoom.
+  /// Unsorted data does not throw, but axis labels, projected slots and
+  /// prepend detection are undefined.
   final List<T> data;
   final DateTime Function(T datum) timeOf;
   final List<ChartLayer<T>> layers;
