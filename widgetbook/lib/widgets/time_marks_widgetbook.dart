@@ -41,6 +41,12 @@ Widget timeMarkWeightsUseCase(BuildContext context) {
       labelBuilder: (v) => v.name,
       initialOption: TimeAxisPlacement.bottom,
     ),
+    valueAxisPlacement: context.knobs.object.dropdown(
+      label: "Value axis placement",
+      options: ValueAxisPlacement.values,
+      labelBuilder: (v) => v.name,
+      initialOption: ValueAxisPlacement.right,
+    ),
   );
 }
 
@@ -81,12 +87,14 @@ class _TimeMarksDemo extends StatelessWidget {
     required this.initialSlotExtent,
     required this.showWeights,
     required this.timeAxisPlacement,
+    required this.valueAxisPlacement,
   });
 
   final _Step step;
   final double initialSlotExtent;
   final bool showWeights;
   final TimeAxisPlacement timeAxisPlacement;
+  final ValueAxisPlacement valueAxisPlacement;
 
   static const _count = 3000;
 
@@ -130,6 +138,7 @@ class _TimeMarksDemo extends StatelessWidget {
         timeOf: (c) => c.time,
         initialAnchor: ChartAnchor.left,
         initialSlotExtent: initialSlotExtent,
+        valueAxis: ValueAxisConfig(placement: valueAxisPlacement),
         timeAxis: TimeAxisConfig(
           placement: timeAxisPlacement,
           formatter: showWeights

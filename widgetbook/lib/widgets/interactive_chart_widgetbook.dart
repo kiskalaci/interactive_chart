@@ -87,7 +87,7 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
   static const _tickInterval = Duration(seconds: 1);
   static const _pageSize = 120;
   static const _loadThresholdSlots = 20;
-  static const _maxPages = 10;
+  static const _maxPages = 50;
 
   final _controller = InteractiveChartController();
   final _random = math.Random(3);
