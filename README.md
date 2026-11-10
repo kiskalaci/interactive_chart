@@ -8,6 +8,9 @@ full specification.
 
 ## Widgetbook
 
+A live demo is deployed at
+<https://kiskalaci.github.io/interactive_chart/>.
+
 A separate project in [widgetbook/](widgetbook/) demonstrates the chart:
 
 ```
