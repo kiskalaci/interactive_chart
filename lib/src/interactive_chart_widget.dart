@@ -15,6 +15,8 @@ import "package:interactive_chart/src/controller.dart";
 import "package:interactive_chart/src/layer.dart";
 import "package:interactive_chart/src/time_axis/time_ticks.dart";
 import "package:interactive_chart/src/value_axis/value_ticks.dart";
+import "package:interactive_chart/src/typedefs/value_range.dart";
+import "package:interactive_chart/src/value_axis/block_extents.dart";
 import "package:interactive_chart/src/web/scroll_guard.dart";
 export "package:interactive_chart/src/time_axis/time_axis.dart";
 export "package:interactive_chart/src/time_axis/time_axis_config.dart";
@@ -215,7 +217,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   void didUpdateWidget(covariant InteractiveChart<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     _autoscaleDirty = true;
-    ctx.dataRevision++;
+    ctx.bumpDataRevision();
     if (widget.data.length != oldWidget.data.length) {
       // R-DATA-9: appending/changing data must not reset pan/zoom.
       final prepended = _prependedCount(oldWidget.data, widget.data);
@@ -325,7 +327,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
         double? lo, hi;
         for (final layer in widget.layers) {
-          final r = layer.extentFor(widget.data, s, e);
+          final r = _extentOf(layer, s, e);
           if (r == null) {
             continue;
           }
@@ -344,6 +346,25 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     }
     ctx.valueTicks = niceValueTicks(ctx.valueMin, ctx.valueMax);
   }
+
+  /// [layer]'s extent over `[start, end)`. A very wide range (zoomed out
+  /// well past a pixel per slot) is combined from cached per-block extents,
+  /// so a pan does not rescan every visible datum.
+  ValueRange? _extentOf(ChartLayer<T> layer, int start, int end) {
+    if (end - start <= _blockedExtentThreshold) {
+      return layer.extentFor(widget.data, start, end);
+    }
+    final data = widget.data;
+    return ctx
+        .cached((
+          layer,
+          #extent,
+        ), () => BlockExtents((a, b) => layer.extentFor(data, a, b)))
+        .over(start, end);
+  }
+
+  /// Ranges up to this many slots are always asked of the layer directly.
+  static const _blockedExtentThreshold = 4096;
 
   double _quantizeSlotExtent(double slotExtent) {
     // R-TIME-11: quantise to steps-per-doubling so a sustained pinch doesn't

@@ -37,6 +37,7 @@ List<CandleShape> paintedCandles(WidgetTester tester) => [
       for (final c in p.candles)
         CandleShape(
           index: c.index,
+          lastIndex: c.lastIndex,
           up: c.up,
           wick: c.wick.shift(Offset(dx, 0)),
           body: c.body.shift(Offset(dx, 0)),

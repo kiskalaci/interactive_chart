@@ -10,6 +10,12 @@ abstract class ChartLayer<T> {
 
   /// Value extent contributed by this layer over `[start, end)` (R-LAYER-7).
   /// Return null to opt out of autoscale (R-SCALE-9) — the default.
+  ///
+  /// When very many slots are visible (zoomed out well past a pixel per slot),
+  /// the chart asks for consecutive sub-ranges instead, caches them until the
+  /// data changes, and combines them with min and max. The extent of a range
+  /// must therefore be the union of the extents of its parts, as a min/max
+  /// over the data is.
   ValueRange? extentFor(List<T> data, int start, int end) => null;
 
   Widget build(Size size, InteractiveChartContext ctx, List<T> data);

@@ -61,7 +61,23 @@ class InteractiveChartContext extends ChangeNotifier {
   /// Bumped every time the chart's parent rebuilds it (new data, data edited
   /// in place, or new layers). Anything cached from the data, such as a
   /// layer's painted geometry, is stale once it changes.
-  int dataRevision = 0;
+  int get dataRevision => _dataRevision;
+  int _dataRevision = 0;
+
+  final _caches = <Object, Object?>{};
+
+  /// A value derived from the current data, created by [create] on first use
+  /// and kept under [key] until the data changes ([bumpDataRevision]). Layers
+  /// use it for indexes over their data, keyed by themselves.
+  V cached<V>(Object key, V Function() create) =>
+      _caches.putIfAbsent(key, create) as V;
+
+  /// The data may have changed: bumps [dataRevision] and drops everything
+  /// [cached].
+  void bumpDataRevision() {
+    _dataRevision++;
+    _caches.clear();
+  }
 
   /// [visibleStart, visibleEnd) clamped to real data — never includes a
   /// projected slot (R-TIME-27).

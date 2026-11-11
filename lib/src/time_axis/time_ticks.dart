@@ -1,4 +1,5 @@
 import "dart:math" as math;
+import "dart:typed_data";
 
 import "package:interactive_chart/src/time_axis/tick_mark_weight.dart";
 
@@ -116,27 +117,42 @@ List<TickMark> buildTickMarks({
   }
 
   final minIndexGap = math.max(1, (minLabelSpacingPx / slotExtent).ceil());
-  // Heaviest first; equal weights go to the earlier slot. `List.sort` is not
-  // stable, so without this tie-break which of two equal-weight neighbours
-  // gets the label would be arbitrary, and could flip when data is appended
-  // or the zoom changes. It also lets the first datum (R-TIME-2) win a tie.
-  final order = List<int>.generate(n, (i) => i)
-    ..sort((a, b) {
-      final byWeight = weights[b].compareTo(weights[a]);
-      return byWeight != 0 ? byWeight : a.compareTo(b);
-    });
 
-  final accepted = <int>[];
-  for (final i in order) {
-    var ok = true;
-    for (final a in accepted) {
-      if ((a - i).abs() < minIndexGap) {
-        ok = false;
-        break;
+  // Candidates go heaviest first, and equal weights in index order, so the
+  // earlier slot wins a tie. That keeps which of two equal-weight neighbours
+  // gets the label from flipping when data is appended or the zoom changes,
+  // and lets the first datum (R-TIME-2) win a tie. Grouping by weight gives
+  // that order in one pass, with no sort.
+  final byWeight = <TickMarkWeight, List<int>>{};
+  for (var i = 0; i < n; i++) {
+    (byWeight[weights[i]] ??= []).add(i);
+  }
+  final tiers = byWeight.keys.toList()..sort((a, b) => b.compareTo(a));
+
+  // A candidate is accepted unless an accepted mark is closer than
+  // minIndexGap. Accepted marks are at least that far apart, so each bucket
+  // of minIndexGap slots holds at most one, and any mark too close to slot i
+  // is in i's bucket or a neighbouring one.
+  final bucketCount = (n - 1) ~/ minIndexGap + 1;
+  final buckets = Int32List(bucketCount)..fillRange(0, bucketCount, -1);
+  bool clear(int i) {
+    final b = i ~/ minIndexGap;
+    for (var k = math.max(0, b - 1); k <= b + 1 && k < buckets.length; k++) {
+      final a = buckets[k];
+      if (a >= 0 && (a - i).abs() < minIndexGap) {
+        return false;
       }
     }
-    if (ok) {
-      accepted.add(i);
+    return true;
+  }
+
+  final accepted = <int>[];
+  for (final tier in tiers) {
+    for (final i in byWeight[tier]!) {
+      if (clear(i)) {
+        accepted.add(i);
+        buckets[i ~/ minIndexGap] = i;
+      }
     }
   }
   accepted.sort();

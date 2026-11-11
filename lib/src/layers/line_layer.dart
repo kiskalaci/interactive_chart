@@ -8,6 +8,7 @@ import "package:interactive_chart/src/painting/buffered_layer.dart";
 import "package:interactive_chart/src/painting/item_hit_region.dart";
 import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
+import "package:interactive_chart/src/value_axis/block_extents.dart";
 
 /// R-LAYER-5 (subset): solid stroke, optional fill, gap handling per
 /// R-DATA-8 — a NaN breaks the line rather than being interpolated across.
@@ -20,7 +21,8 @@ import "package:interactive_chart/src/typedefs/value_range.dart";
 /// layer reports the point under the pointer: each point answers to a
 /// [pointHitSize] square around it. Like `CandleLayer`, the line is computed
 /// for a margin beyond the view, so a pan within it moves the painted line
-/// instead of painting it again.
+/// instead of painting it again. Zoomed out past a pixel per slot, each pixel
+/// column keeps only its first, lowest, highest and last point.
 ///
 /// With [fill], the area under the line is shaded with a vertical gradient:
 /// strongest ([fillTopOpacity]) at the highest point of the line in view,
@@ -81,10 +83,11 @@ class LineLayer<T> extends ChartLayer<T> {
   latestPointBuilder;
 
   @override
-  ValueRange? extentFor(List<T> data, int start, int end) {
-    if (!contributesToExtent) {
-      return null;
-    }
+  ValueRange? extentFor(List<T> data, int start, int end) =>
+      contributesToExtent ? _rangeOf(data, start, end) : null;
+
+  /// The lowest and highest finite value in `[start, end)`.
+  ValueRange? _rangeOf(List<T> data, int start, int end) {
     double? lo, hi;
     for (var i = start; i < end; i++) {
       final v = valueOf(data[i]);
@@ -94,10 +97,7 @@ class LineLayer<T> extends ChartLayer<T> {
       lo = lo == null ? v : math.min(lo, v);
       hi = hi == null ? v : math.max(hi, v);
     }
-    if (lo == null || hi == null) {
-      return null;
-    }
-    return (lo, hi);
+    return lo == null || hi == null ? null : (lo, hi);
   }
 
   @override
@@ -119,8 +119,9 @@ class LineLayer<T> extends ChartLayer<T> {
         size.height,
         fillTop,
       ),
-      compute: (start, end) =>
-          _line(ctx, data, start, end, withTargets: interactive),
+      compute: (start, end) => ctx.slotExtent < 1
+          ? _columnLine(ctx, data, start, end, withTargets: interactive)
+          : _line(ctx, data, start, end, withTargets: interactive),
       paintersOf: (content) => [
         if (fillTop != null && content.runs.isNotEmpty)
           (
@@ -168,20 +169,22 @@ class LineLayer<T> extends ChartLayer<T> {
   }
 
   /// The y of the highest finite point in view, or the bottom of the
-  /// viewport if there is none.
+  /// viewport if there is none. Cached per block, so a wide zoomed-out view
+  /// does not rescan every point on each frame.
   double _highestVisibleY(
     Size size,
     InteractiveChartContext ctx,
     List<T> data,
   ) {
-    var top = size.height;
-    for (var i = ctx.visibleStart; i < ctx.visibleEnd && i < data.length; i++) {
-      final v = valueOf(data[i]);
-      if (v.isFinite) {
-        top = math.min(top, ctx.yOf(v));
-      }
-    }
-    return top;
+    final visible = ctx
+        .cached((
+          this,
+          #lineRange,
+        ), () => BlockExtents((a, b) => _rangeOf(data, a, b)))
+        .over(ctx.visibleStart, math.min(ctx.visibleEnd, data.length));
+    return visible == null
+        ? size.height
+        : math.min(size.height, ctx.yOf(visible.$2));
   }
 
   /// The gap-free runs of points in `[start, end)`, in viewport coordinates at
@@ -222,6 +225,89 @@ class LineLayer<T> extends ChartLayer<T> {
         targetIndices.add(i);
       }
     }
+    return (runs: runs, targets: targets, targetIndices: targetIndices);
+  }
+
+  /// Below a pixel per slot (level of detail): per pixel column of content,
+  /// only the first, lowest, highest and last point, in index order. The
+  /// stroke through them covers the same pixels as one through every point,
+  /// at a few points per pixel however far out the view is zoomed. A column
+  /// with no finite value breaks the line; a gap inside a column does not.
+  _Line _columnLine(
+    InteractiveChartContext ctx,
+    List<T> data,
+    int start,
+    int end, {
+    required bool withTargets,
+  }) {
+    final targets = <Rect>[];
+    final targetIndices = <int>[];
+    final runs = <List<Offset>>[];
+    var inRun = false;
+
+    int? column;
+    var any = false;
+    var first = 0, last = 0, low = 0, high = 0;
+    var lowV = 0.0, highV = 0.0;
+
+    void flush() {
+      if (column == null) {
+        return;
+      }
+      if (!any) {
+        inRun = false;
+        return;
+      }
+      final picked = {first, low, high, last}.toList()..sort();
+      for (final i in picked) {
+        final point = Offset(ctx.xOf(i), ctx.yOf(valueOf(data[i])));
+        if (inRun) {
+          runs.last.add(point);
+        } else {
+          runs.add([point]);
+          inRun = true;
+        }
+        if (withTargets) {
+          targets.add(
+            Rect.fromCenter(
+              center: point,
+              width: pointHitSize,
+              height: pointHitSize,
+            ),
+          );
+          targetIndices.add(i);
+        }
+      }
+    }
+
+    for (var i = start; i < end && i < data.length; i++) {
+      final col = (i * ctx.slotExtent).floor();
+      if (col != column) {
+        flush();
+        column = col;
+        any = false;
+      }
+      final v = valueOf(data[i]);
+      if (v.isNaN || v.isInfinite) {
+        continue;
+      }
+      if (!any) {
+        any = true;
+        first = low = high = i;
+        lowV = highV = v;
+      } else {
+        if (v < lowV) {
+          low = i;
+          lowV = v;
+        }
+        if (v > highV) {
+          high = i;
+          highV = v;
+        }
+      }
+      last = i;
+    }
+    flush();
     return (runs: runs, targets: targets, targetIndices: targetIndices);
   }
 

@@ -45,6 +45,13 @@ Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
     min: 1,
     max: 64,
   ),
+  // Below 1, zooming out merges the candles of each pixel column into one.
+  minSlotExtent: context.knobs.double.slider(
+    label: "Min slot extent",
+    initialValue: 1,
+    min: 0.05,
+    max: 1,
+  ),
   showVolume: context.knobs.boolean(label: "Show volume", initialValue: true),
   showMovingAverage: context.knobs.boolean(
     label: "Show MA 20",
@@ -82,6 +89,7 @@ class _InteractiveChartDemo extends StatefulWidget {
     required this.valueAxisPlacement,
     required this.timeAxisPlacement,
     required this.initialSlotExtent,
+    required this.minSlotExtent,
     required this.showVolume,
     required this.showMovingAverage,
     required this.showPriceTag,
@@ -96,6 +104,7 @@ class _InteractiveChartDemo extends StatefulWidget {
   final ValueAxisPlacement valueAxisPlacement;
   final TimeAxisPlacement timeAxisPlacement;
   final double initialSlotExtent;
+  final double minSlotExtent;
   final bool showVolume;
   final bool showMovingAverage;
   final bool showPriceTag;
@@ -429,7 +438,11 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
               children: [
                 Positioned.fill(
                   child: InteractiveChart<Candle>(
+                    // The zoom limits are read once, so a new limit needs a
+                    // new chart.
+                    key: ValueKey(widget.minSlotExtent),
                     controller: _controller,
+                    minSlotExtent: widget.minSlotExtent,
                     data: _candles,
                     timeOf: (c) => c.time,
                     initialAnchor: widget.initialAnchor,

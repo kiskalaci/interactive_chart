@@ -8,10 +8,16 @@ class CandleShape {
     required this.up,
     required this.wick,
     required this.body,
-  });
+    int? lastIndex,
+  }) : lastIndex = lastIndex ?? index;
 
-  /// The datum's index.
+  /// The datum's index, or the first one's when zoomed out so far that one
+  /// candle stands for several.
   final int index;
+
+  /// The last datum the candle stands for: [index] unless zoomed out past a
+  /// pixel per slot.
+  final int lastIndex;
 
   /// Whether the candle closed at or above its open.
   final bool up;

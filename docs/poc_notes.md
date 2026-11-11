@@ -89,6 +89,29 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   that changes the visible extent still recomputes. So does a histogram
   whose visible maximum changes, or a filled line whose highest visible
   point moves. Hit testing translates the pointer by the same shift.
+- **Zooming out past a pixel per slot (level of detail).** With a
+  `minSlotExtent` below 1 (the default stays 1), the painted layers draw one
+  item per pixel column of content instead of one per slot. A candle stands
+  for its column: first open, highest high, lowest low, last close. A bar is
+  as tall as the tallest in its column. A line keeps only each column's
+  first, lowest, highest and last point, so the stroke covers the same
+  pixels. Columns are counted in content pixels, so they do not shift while
+  panning. Taps and hovers still report the slot under the pointer. A column
+  of gaps breaks a line; a gap inside a column does not.
+- **Wide ranges use cached block extents.** When more than 4096 slots are
+  visible, autoscale combines each layer's `extentFor` over cached 256-slot
+  blocks (`BlockExtents`), so a pan reads only the partial blocks at the
+  edges and any blocks it shows for the first time. The histogram's visible
+  maximum and a filled line's highest visible point use the same cache.
+  Caches live in `ctx.cached` and are dropped on every parent rebuild. This
+  needs `extentFor` to be a min/max that can be combined over sub-ranges,
+  which the built-in layers are; the `ChartLayer.extentFor` docs say so.
+- **Tick selection is near-linear.** `buildTickMarks` groups candidates by
+  weight instead of sorting them, and checks only the neighbouring buckets of
+  `minIndexGap` slots for a conflict. It picks exactly the marks the pairwise
+  greedy pass did (`test/tick_selection_test.dart`). For 300k one-minute bars
+  at 8 px per slot that is about 20 ms instead of about 10 s, which matters
+  because the marks are rebuilt each time a pinch crosses a zoom bucket.
 - **Crosshair + readouts** (§9) — hover (desktop) / long-press-drag (touch) /
   tap, value + time badges, projected-slot handling (time only, no value).
 - **Controller** (§10) — visible range, slot extent, autoscale toggle,
