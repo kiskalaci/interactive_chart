@@ -508,6 +508,7 @@ Behaviours the tests pin down, worth knowing when writing more:
 | TC-GEST-01 | ✅ Horizontal drag | Pans x by the drag distance; clamped at both ends | W | P0 |
 | TC-GEST-02 | ✅ Purely horizontal drag | Autoscale stays on (`test/prepend_test.dart`) | W | P0 |
 | TC-GEST-03 | ✅ Drag with vertical movement | Pans the value extent and switches autoscale off (documented deviation from R-SCROLL-6) | W | P0 |
+| TC-GEST-04b | ✅ Nothing jumps when a pinch ends (bug found and fixed) | Lifting one finger and moving the other no longer shifts the view by the distance that finger travelled during the pinch (the gesture used to restart from the finger's original touch-down point); releasing both fingers, a fresh drag, a finger added to a drag, and a trackpad pinch after a click elsewhere all stay anchored | W | P0 |
 | TC-GEST-03b | ✅ Vertical panning needs deliberate vertical movement | A horizontal drag with a little wobble, or a long swipe that drifts, keeps autoscale on; a vertical or steep diagonal drag still pans | W | P0 |
 | TC-GEST-04 | ✅ Two-finger pinch, focal point fixed | Datum under the focal point stays under it (< 0.5 px) through the whole gesture | W | P0 |
 | TC-GEST-05 | ✅ Sustained pinch over 100+ update events | No cumulative drift (gesture-start reference) | W | P0 |

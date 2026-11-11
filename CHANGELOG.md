@@ -1,5 +1,6 @@
 ## Unreleased
 
+* Fixed the chart jumping after a two-finger pinch: once one finger lifted, the gesture restarted from the other finger's original touch-down point instead of where it is now.
 * `EventLayer` and `ChartEvent`: small icons for financial events (dividends, earnings, revenue) at the day they happened on. Tapping one opens a configurable card (`EventOverlayConfig`, or `overlayBuilder`) with the event's title and description and a close button. Icons that would overlap when zoomed out are hidden.
 * A drag only pans the value axis (switching autoscale off) once its vertical travel reaches `verticalPanThreshold` (new parameter, default 16 px) and half its horizontal travel, so horizontal swipes no longer turn autoscale off by accident.
 * `PriceTagLayer`: a horizontal line at the latest value of the dataset and a tag with that value on the value axis. The value is cropped, not rounded, to `precision` decimals (default 2).

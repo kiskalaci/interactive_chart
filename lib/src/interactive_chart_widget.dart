@@ -149,6 +149,14 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   double? _lastPointerDownX;
   double? _lastPointerDownY;
 
+  /// Pointers currently down on the viewport.
+  int _activePointers = 0;
+
+  /// Whether a second pointer has joined since the first one went down. The
+  /// scale gesture restarts when a finger is added or lifted, and after that
+  /// the touch-down position is no longer where the remaining finger is.
+  bool _multiTouchSinceFirstDown = false;
+
   /// Where the current gesture started vertically, and how much vertical
   /// movement has already been applied to the value extent.
   double? _gestureStartFocalY;
@@ -395,11 +403,18 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
 
   void _onScaleStart(ScaleStartDetails details) {
     _gestureStartSlotExtent = ctx.slotExtent;
-    final focalX = details.pointerCount == 1 && _lastPointerDownX != null
+    // A lone finger's recorded touch-down is the focal point the gesture
+    // started from, before the slop was crossed. It is only valid for a
+    // gesture that has been a single pointer throughout: once a pinch has
+    // happened, the finger left on screen has moved on, and the live focal
+    // point is the right one.
+    final singlePointerGesture =
+        details.pointerCount == 1 && !_multiTouchSinceFirstDown;
+    final focalX = singlePointerGesture && _lastPointerDownX != null
         ? _lastPointerDownX!
         : details.localFocalPoint.dx;
     _gestureStartFocalX = focalX;
-    _gestureStartFocalY = details.pointerCount == 1 && _lastPointerDownY != null
+    _gestureStartFocalY = singlePointerGesture && _lastPointerDownY != null
         ? _lastPointerDownY!
         : details.localFocalPoint.dy;
     _appliedDy = 0;
@@ -846,13 +861,25 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
         if (!mounted) {
           return;
         }
-        _lastPointerDownX = event.localPosition.dx;
-        _lastPointerDownY = event.localPosition.dy;
+        _activePointers++;
+        if (_activePointers == 1) {
+          _lastPointerDownX = event.localPosition.dx;
+          _lastPointerDownY = event.localPosition.dy;
+          _multiTouchSinceFirstDown = false;
+        } else {
+          _multiTouchSinceFirstDown = true;
+        }
         _onTouchDown(event);
       },
       onPointerMove: _onTouchMove,
-      onPointerUp: _onTouchUp,
-      onPointerCancel: _onTouchCancel,
+      onPointerUp: (event) {
+        _activePointers = math.max(0, _activePointers - 1);
+        _onTouchUp(event);
+      },
+      onPointerCancel: (event) {
+        _activePointers = math.max(0, _activePointers - 1);
+        _onTouchCancel(event);
+      },
       child: GestureDetector(
         // Opaque so pan and zoom work anywhere in the viewport. The default
         // defers to the children, which left empty space dead whenever the

@@ -619,6 +619,207 @@ void main() {
     });
   });
 
+  // After a pinch the scale gesture restarts as soon as one finger lifts. It
+  // used to restart from the remaining finger's original touch-down point
+  // rather than from where that finger is now, so the chart jumped by the
+  // distance the finger had travelled the moment it moved.
+  group("TC-GEST-04b nothing jumps when a pinch ends", () {
+    /// A pinch left open: both fingers down, spread from [startSpan] to
+    /// [endSpan] around the chart's centre.
+    Future<(TestGesture, TestGesture)> openPinch(
+      WidgetTester tester, {
+      required double startSpan,
+      required double endSpan,
+    }) async {
+      final center = tester.getCenter(_chartFinder);
+      final a = await tester.startGesture(
+        center - Offset(startSpan / 2, 0),
+        pointer: 1,
+      );
+      final b = await tester.startGesture(
+        center + Offset(startSpan / 2, 0),
+        pointer: 2,
+      );
+      const steps = 40;
+      for (var i = 1; i <= steps; i++) {
+        final span = startSpan + (endSpan - startSpan) * i / steps;
+        await a.moveTo(center - Offset(span / 2, 0));
+        await b.moveTo(center + Offset(span / 2, 0));
+        await tester.pump();
+      }
+      return (a, b);
+    }
+
+    for (final (name, startSpan, endSpan) in [
+      ("zoom in", 100.0, 300.0),
+      ("zoom out", 300.0, 100.0),
+    ]) {
+      testWidgets("the remaining finger does not jump the view ($name)", (
+        tester,
+      ) async {
+        final h = await _pump(tester, slotExtent: name == "zoom in" ? 8 : 24);
+        await tester.drag(_chartFinder, const Offset(-400, 0));
+        await tester.pumpAndSettle();
+        final (a, b) = await openPinch(
+          tester,
+          startSpan: startSpan,
+          endSpan: endSpan,
+        );
+        final scrollBefore = h.ctx.scrollOffset;
+        final extentBefore = h.ctx.slotExtent;
+
+        await a.up();
+        await tester.pump();
+        expect(h.ctx.scrollOffset, scrollBefore);
+
+        // Moving the other finger a little must move the view by about that
+        // much at most, not by the distance it travelled during the pinch.
+        await b.moveBy(const Offset(1, 0));
+        await tester.pump();
+        expect((h.ctx.scrollOffset - scrollBefore).abs(), lessThan(2));
+        expect(h.ctx.slotExtent, extentBefore);
+
+        await b.up();
+        await tester.pumpAndSettle();
+        expect((h.ctx.scrollOffset - scrollBefore).abs(), lessThan(2));
+      });
+    }
+
+    testWidgets("the finger left on screen then pans by exactly its travel", (
+      tester,
+    ) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      final (a, b) = await openPinch(tester, startSpan: 100, endSpan: 260);
+      await a.up();
+      await tester.pump();
+
+      // The gesture restarts on the first move of the remaining finger, which
+      // is absorbed by the restart. After that the view follows the finger.
+      await b.moveBy(const Offset(-10, 0));
+      await tester.pump();
+      final scrollBefore = h.ctx.scrollOffset;
+      await b.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      expect(h.ctx.scrollOffset, closeTo(scrollBefore + 60, 2));
+      await b.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("releasing both fingers leaves the view where it is", (
+      tester,
+    ) async {
+      final h = await _pump(tester);
+      final (a, b) = await openPinch(tester, startSpan: 100, endSpan: 260);
+      final scrollBefore = h.ctx.scrollOffset;
+      final extentBefore = h.ctx.slotExtent;
+      await b.up();
+      await a.up();
+      await tester.pumpAndSettle();
+      expect(h.ctx.scrollOffset, scrollBefore);
+      expect(h.ctx.slotExtent, extentBefore);
+    });
+
+    testWidgets("a pinch does not switch autoscale off", (tester) async {
+      final h = await _pump(tester);
+      final (a, b) = await openPinch(tester, startSpan: 100, endSpan: 260);
+      await a.up();
+      await b.up();
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isTrue);
+    });
+
+    testWidgets("a one-finger drag straight after a pinch is anchored to its "
+        "own start", (tester) async {
+      final h = await _pump(tester);
+      final (a, b) = await openPinch(tester, startSpan: 100, endSpan: 260);
+      await a.up();
+      await b.up();
+      await tester.pumpAndSettle();
+      final scrollBefore = h.ctx.scrollOffset;
+
+      // A fresh touch far from where the pinch fingers were.
+      await tester.dragFrom(
+        tester.getCenter(_chartFinder) + const Offset(0, 60),
+        const Offset(-120, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(h.ctx.scrollOffset, closeTo(scrollBefore + 120, 2));
+    });
+
+    testWidgets("a finger added to a drag pinches around the live midpoint", (
+      tester,
+    ) async {
+      final h = await _pump(tester, slotExtent: 16);
+      await tester.drag(_chartFinder, const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      final center = tester.getCenter(_chartFinder);
+
+      // One finger drags first, then a second joins and spreads.
+      var aAt = center - const Offset(40, 0);
+      var bAt = center + const Offset(80, 0);
+      final a = await tester.startGesture(aAt);
+      aAt += const Offset(-30, 0);
+      await a.moveTo(aAt);
+      await tester.pump();
+      final b = await tester.startGesture(bAt);
+      final fx = _localX(tester, (aAt.dx + bAt.dx) / 2);
+      final indexBefore = h.ctx.fractionalIndexAtViewportX(fx);
+      final extentBefore = h.ctx.slotExtent;
+      for (var i = 1; i <= 20; i++) {
+        aAt += const Offset(-3, 0);
+        bAt += const Offset(3, 0);
+        await a.moveTo(aAt);
+        await b.moveTo(bAt);
+        await tester.pump();
+      }
+      expect(h.ctx.slotExtent, isNot(extentBefore));
+      final fxNow = _localX(tester, (aAt.dx + bAt.dx) / 2);
+      expect(h.ctx.fractionalIndexAtViewportX(fxNow), closeTo(indexBefore, 2));
+
+      await a.up();
+      await tester.pump();
+      final scrollBefore = h.ctx.scrollOffset;
+      await b.moveBy(const Offset(1, 0));
+      await tester.pump();
+      expect((h.ctx.scrollOffset - scrollBefore).abs(), lessThan(2));
+      await b.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("a trackpad pinch anchors on the pointer, not the last click", (
+      tester,
+    ) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(_chartFinder);
+
+      // A click somewhere else first leaves a stale "last pointer down".
+      await tester.tapAt(rect.topLeft + const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      final at = Offset(rect.left + rect.width * 0.7, rect.center.dy);
+      final fx = _localX(tester, at.dx);
+      final indexBefore = h.ctx.fractionalIndexAtViewportX(fx);
+
+      final pad = TestPointer(7, PointerDeviceKind.trackpad);
+      await tester.sendEventToBinding(pad.panZoomStart(at));
+      for (var i = 1; i <= 20; i++) {
+        await tester.sendEventToBinding(
+          pad.panZoomUpdate(at, scale: 1 + i * 0.1),
+        );
+        await tester.pump();
+      }
+      await tester.sendEventToBinding(pad.panZoomEnd());
+      await tester.pumpAndSettle();
+
+      expect(h.ctx.slotExtent, greaterThan(8));
+      expect(h.ctx.fractionalIndexAtViewportX(fx), closeTo(indexBefore, 1 / 8));
+    });
+  });
+
   group("TC-GEST-12 pan and zoom both disabled", () {
     testWidgets("no gesture changes the viewport", (tester) async {
       final h = await _pump(tester, panEnabled: false, zoomEnabled: false);
