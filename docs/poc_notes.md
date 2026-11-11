@@ -112,6 +112,15 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   greedy pass did (`test/tick_selection_test.dart`). For 300k one-minute bars
   at 8 px per slot that is about 20 ms instead of about 10 s, which matters
   because the marks are rebuilt each time a pinch crosses a zoom bucket.
+- **Label sizes are cached; off-axis marks are skipped.** The axes and the
+  price tag measure their labels through a shared LRU cache of laid-out
+  sizes, keyed by text, style and text scale (`LabelSizes`,
+  `lib/src/painting/label_sizes.dart`). It is cleared when the system's
+  fonts change. A pan over labels already seen lays none out again. The
+  time axis also starts at the first mark inside the axis and stops past its
+  right edge, instead of formatting and measuring every mark of the series
+  on each frame. A label centred on a mark outside the axis can never fit,
+  so the labels shown are the same.
 - **Crosshair + readouts** (§9) — hover (desktop) / long-press-drag (touch) /
   tap, value + time badges, projected-slot handling (time only, no value).
 - **Controller** (§10) — visible range, slot extent, autoscale toggle,

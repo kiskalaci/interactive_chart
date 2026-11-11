@@ -2,6 +2,7 @@ import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/value_axis/value_axis_config.dart";
 import "package:interactive_chart/src/value_axis/value_axis_placement.dart";
 import "package:interactive_chart/src/chart_context.dart";
+import "package:interactive_chart/src/painting/label_sizes.dart";
 import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 /// Renders tick labels for the value axis gutter as positioned [Text]
@@ -27,18 +28,19 @@ class ValueAxisView extends StatelessWidget {
           continue;
         }
         final text = config.format(v, decimals: decimals);
-        final painter = TextPainter(
-          text: TextSpan(text: text, style: config.textStyle),
-          textDirection: TextDirection.ltr,
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout(maxWidth: width);
+        final label = _labelSize(
+          text,
+          config.textStyle,
+          MediaQuery.textScalerOf(context),
+          width,
+        );
         final dx = config.placement == ValueAxisPlacement.right
             ? 4.0
-            : width - painter.width - 4.0;
+            : width - label.width - 4.0;
         labels.add(
           Positioned(
             left: dx,
-            top: y - painter.height / 2,
+            top: y - label.height / 2,
             child: Text(text, style: config.textStyle),
           ),
         );
@@ -58,17 +60,34 @@ double measureValueAxisWidth(
   var maxWidth = 0.0;
   final decimals = valueDecimals(ctx.valueTicks);
   for (final v in ctx.valueTicks) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: config.format(v, decimals: decimals),
-        style: config.textStyle,
-      ),
-      textDirection: TextDirection.ltr,
-      textScaler: textScaler,
-    )..layout();
-    if (painter.width > maxWidth) {
-      maxWidth = painter.width;
+    final width = LabelSizes.instance
+        .of(config.format(v, decimals: decimals), config.textStyle, textScaler)
+        .width;
+    if (width > maxWidth) {
+      maxWidth = width;
     }
   }
   return maxWidth + 8;
+}
+
+/// The size of a label laid out at most [maxWidth] wide: the cached one-line
+/// size when it fits, as it does once the gutter has grown to its labels.
+Size _labelSize(
+  String text,
+  TextStyle style,
+  TextScaler textScaler,
+  double maxWidth,
+) {
+  final size = LabelSizes.instance.of(text, style, textScaler);
+  if (size.width <= maxWidth) {
+    return size;
+  }
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: textScaler,
+  )..layout(maxWidth: maxWidth);
+  final constrained = painter.size;
+  painter.dispose();
+  return constrained;
 }

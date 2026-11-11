@@ -1,6 +1,7 @@
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/label_sizes.dart";
 import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 /// Marks the latest price: a horizontal line across the whole chart at the
@@ -117,15 +118,10 @@ class PriceTagLayer<T> extends ChartLayer<T> {
     if (value == null) {
       return 0;
     }
-    final painter = TextPainter(
-      text: TextSpan(
-        text: truncateToDecimals(value, precision),
-        style: textStyle,
-      ),
-      textDirection: TextDirection.ltr,
-      textScaler: textScaler,
-    )..layout();
-    return painter.width + _tagPadding.horizontal;
+    final width = LabelSizes.instance
+        .of(truncateToDecimals(value, precision), textStyle, textScaler)
+        .width;
+    return width + _tagPadding.horizontal;
   }
 }
 

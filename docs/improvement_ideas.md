@@ -5,12 +5,13 @@ open spec features. Each section is ordered by priority. See
 [poc_notes.md](poc_notes.md) for what is implemented today and
 [requirements.md](requirements.md) for the full specification.
 
-Suggested order: performance items 1–3, then smooth autoscale and momentum
-pan. Together they change how the chart feels more than anything else here.
+Performance items 1–6 are done; [poc_notes.md](poc_notes.md) describes how
+they work. Next suggested: item 7 (measure it in CI), then smooth autoscale
+and momentum pan.
 
 ## Performance
 
-### 1. Stop rebuilding the whole chart on every change
+### 1. Stop rebuilding the whole chart on every change ✅
 
 `_onContextChanged` in `lib/src/interactive_chart_widget.dart` calls
 `setState` on any context change. Moving the crosshair therefore rebuilds
@@ -22,7 +23,7 @@ every candle, line segment and axis label (TC-PERF-04 already expects this).
   layer declaring which listenables it depends on.
 - The crosshair then rebuilds only itself, and hover becomes nearly free.
 
-### 2. Paint the shapes and keep one hit-test layer
+### 2. Paint the shapes and keep one hit-test layer ✅
 
 Each candle is `Positioned → MouseRegion → GestureDetector → Stack →
 2×Positioned → ColoredBox` (`lib/src/layers/candle_layer.dart`). At 1 px slots
@@ -35,14 +36,14 @@ per-item `onTap`/`onHover` API can stay without a widget per item:
   pointer to an index with `ctx.indexAtViewportX`, and call `onTap(index)`.
 - Do the same for `HistogramLayer` and the line layer's hit targets.
 
-### 3. Draw the line as one path
+### 3. Draw the line as one path ✅
 
 `LineLayer` builds a rotated 1 px `ColoredBox` per segment. This is slow and
 also looks worse: no anti-aliasing at the joins, gaps at sharp angles and no
 round caps. A single `Path` stroked with `StrokeJoin.round` is faster and
 renders better.
 
-### 4. Make panning a translate, not a repaint
+### 4. Make panning a translate, not a repaint ✅
 
 Paint content in content coordinates into a picture covering a buffer (for
 example 1.5× the viewport). During a horizontal pan only a
@@ -50,14 +51,14 @@ example 1.5× the viewport). During a horizontal pan only a
 Repaint when the view leaves the buffer, or when the zoom, value extent or
 data changes.
 
-### 5. Level of detail when zoomed far out
+### 5. Level of detail when zoomed far out ✅
 
 `minSlotExtent` is 1 px, so the chart cannot zoom out past one bar per pixel.
 Aggregating bars per pixel column (min/max/first/last, the M4 approach) would
 allow zooming out to years of 1-minute data. Keep per-range extents in a
 sparse table or segment tree so autoscale stays fast over large ranges.
 
-### 6. Cache label layout
+### 6. Cache label layout ✅
 
 `TextPainter`s are created in `value_axis.dart`, `time_axis.dart` and
 `price_tag_layer.dart`. Reusing laid-out painters keyed by
