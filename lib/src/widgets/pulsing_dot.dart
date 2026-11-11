@@ -39,38 +39,36 @@ class _PulsingDotState extends State<PulsingDot>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox.square(
-      dimension: widget.pulseSize,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          final t = Curves.easeOut.transform(_controller.value);
-          final ringSize =
-              widget.dotSize + (widget.pulseSize - widget.dotSize) * t;
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: ringSize,
-                height: ringSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.color.withValues(alpha: 0.5 * (1 - t)),
-                ),
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: widget.pulseSize,
+    child: AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = Curves.easeOut.transform(_controller.value);
+        final ringSize =
+            widget.dotSize + (widget.pulseSize - widget.dotSize) * t;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: ringSize,
+              height: ringSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color.withValues(alpha: 0.5 * (1 - t)),
               ),
-              Container(
-                width: widget.dotSize,
-                height: widget.dotSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.color,
-                ),
+            ),
+            Container(
+              width: widget.dotSize,
+              height: widget.dotSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.color,
               ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+            ),
+          ],
+        );
+      },
+    ),
+  );
 }

@@ -19,7 +19,6 @@ void main() {
             controller: controller,
             data: [for (var i = 0; i < 500; i++) i],
             timeOf: (i) => DateTime(2024).add(Duration(minutes: i)),
-            initialSlotExtent: 8,
             layers: [LineLayer<int>(valueOf: (i) => i.toDouble())],
           ),
         ),

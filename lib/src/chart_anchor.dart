@@ -1,7 +1,7 @@
 /// Which edge of the viewport the chart is initially scrolled to — i.e.
 /// where it starts building its candles from. This is purely about the
 /// starting scroll position; it never mirrors the axis, since time always
-/// runs left-to-right on screen (see [xOf]).
+/// runs left-to-right on screen (see `xOf`).
 ///
 /// [ChartAnchor.left] leaves the viewport at the start of the data, so the
 /// earliest slot sits at the left edge — e.g. an intraday chart, which

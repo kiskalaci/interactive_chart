@@ -90,8 +90,7 @@ void main() {
         await tester.drag(_chartFinder, Offset(dx, 0), warnIfMissed: false);
         await tester.pumpAndSettle();
       }
-      final pointer = TestPointer(1);
-      pointer.hover(tester.getCenter(_chartFinder));
+      TestPointer().hover(tester.getCenter(_chartFinder));
       await tester.pump(const Duration(seconds: 1));
       expect(_host.requests, 1);
       expect(script.pending.length, 1);
@@ -346,7 +345,7 @@ void main() {
   testWidgets("opened at the end: the initial announce loads nothing", (
     tester,
   ) async {
-    await _pump(tester, anchor: ChartAnchor.right);
+    await _pump(tester);
     expect(_host.requests, 0);
     expect(minuteTime(0), isA<DateTime>());
   });

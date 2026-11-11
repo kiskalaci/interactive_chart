@@ -48,7 +48,7 @@ List<Candle> generateDemoCandles({
 
     final open = price;
     final drift = (random.nextDouble() - 0.48) * 4;
-    final close = math.max(1.0, open + drift);
+    final close = math.max<double>(1, open + drift);
     final high = math.max(open, close) + random.nextDouble() * 2;
     final low = math.max(0.5, math.min(open, close) - random.nextDouble() * 2);
     final volume = 1000 + random.nextDouble() * 5000;
@@ -98,7 +98,7 @@ List<Candle> generateOlderCandlesPage(
 
     final close = price;
     final drift = (random.nextDouble() - 0.48) * 4;
-    final open = math.max(1.0, close - drift);
+    final open = math.max<double>(1, close - drift);
     final high = math.max(open, close) + random.nextDouble() * 2;
     final low = math.max(0.5, math.min(open, close) - random.nextDouble() * 2);
     final volume = 1000 + random.nextDouble() * 5000;

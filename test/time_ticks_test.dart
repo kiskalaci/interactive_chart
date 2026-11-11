@@ -225,7 +225,7 @@ void main() {
     });
 
     test("midnight and noon pad correctly", () {
-      expect(defaultTimeLabel(DateTime(2024, 1, 1, 0, 0, 0), 10), "00:00:00");
+      expect(defaultTimeLabel(DateTime(2024), 10), "00:00:00");
       expect(
         defaultTimeLabel(DateTime(2024, 1, 1, 23, 59, 59), 10),
         "23:59:59",
@@ -236,8 +236,8 @@ void main() {
   group("TC-TIME-07 calendar edge cases", () {
     test("month ends", () {
       expect(timeWeight(DateTime(2024, 1, 30), DateTime(2024, 1, 31)), 50);
-      expect(timeWeight(DateTime(2024, 1, 31), DateTime(2024, 2, 1)), 60);
-      expect(timeWeight(DateTime(2024, 4, 30), DateTime(2024, 5, 1)), 60);
+      expect(timeWeight(DateTime(2024, 1, 31), DateTime(2024, 2)), 60);
+      expect(timeWeight(DateTime(2024, 4, 30), DateTime(2024, 5)), 60);
     });
 
     test("year end", () {
@@ -247,9 +247,9 @@ void main() {
 
     test("leap day", () {
       expect(timeWeight(DateTime(2024, 2, 28), DateTime(2024, 2, 29)), 50);
-      expect(timeWeight(DateTime(2024, 2, 29), DateTime(2024, 3, 1)), 60);
+      expect(timeWeight(DateTime(2024, 2, 29), DateTime(2024, 3)), 60);
       // The same dates in a non-leap year skip straight to March.
-      expect(timeWeight(DateTime(2023, 2, 28), DateTime(2023, 3, 1)), 60);
+      expect(timeWeight(DateTime(2023, 2, 28), DateTime(2023, 3)), 60);
     });
 
     test("weights depend on calendar fields, not elapsed time (DST safe)", () {
@@ -488,7 +488,7 @@ void main() {
         t = t.add(const Duration(seconds: 30));
       }
       // 150 one-minute deltas precede 100 half-minute ones.
-      expect(inferModalIntervalSeconds(times, sampleSize: 100), 30);
+      expect(inferModalIntervalSeconds(times), 30);
       expect(inferModalIntervalSeconds(times, sampleSize: 1000), 60);
     });
 

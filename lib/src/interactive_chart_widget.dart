@@ -669,7 +669,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
           ]);
         }
         return true;
-      }());
+      }(), "InteractiveChart requires bounded constraints.");
       _textScaler = MediaQuery.textScalerOf(context);
       // An axis is only laid out when the chart is big enough to hold it and
       // still leave a viewport; in a tiny (or animating-from-zero) chart it
@@ -680,12 +680,12 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
           widget.timeAxis != null && constraints.maxHeight > _timeAxisHeight;
       final valueAxisWidth = showValueAxis ? _valueAxisWidth : 0.0;
       final timeAxisHeight = showTimeAxis ? _timeAxisHeight : 0.0;
-      final viewportWidth = math.max(
-        0.0,
+      final viewportWidth = math.max<double>(
+        0,
         constraints.maxWidth - valueAxisWidth,
       );
-      final viewportHeight = math.max(
-        0.0,
+      final viewportHeight = math.max<double>(
+        0,
         constraints.maxHeight - timeAxisHeight,
       );
 

@@ -667,8 +667,6 @@ void main() {
                   data: intSeries(0, 1000),
                   timeOf: minuteTime,
                   initialAnchor: ChartAnchor.left,
-                  valueAxis: null,
-                  timeAxis: null,
                   layers: [
                     LineLayer<int>(valueOf: (i) => 100.0 + i % 11),
                     ContextProbe<int>((c) => h.ctx = c),

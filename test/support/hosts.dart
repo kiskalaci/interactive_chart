@@ -116,8 +116,6 @@ class PagingHostState extends State<PagingHost> {
           data: data,
           timeOf: minuteTime,
           initialAnchor: widget.anchor,
-          valueAxis: null,
-          timeAxis: null,
           onVisibleRangeChanged: _onRange,
           layers: [
             LineLayer<int>(valueOf: widget.valueOf ?? (id) => 100.0 + id % 13),
@@ -210,16 +208,12 @@ class LiveHostState extends State<LiveHost> {
   Widget build(BuildContext context) => MaterialApp(
     home: Align(
       alignment: Alignment.topLeft,
-      child: SizedBox(
-        width: double.infinity,
-        height: double.infinity,
+      child: SizedBox.expand(
         child: InteractiveChart<LiveBar>(
           controller: controller,
           data: bars,
           timeOf: (b) => b.time,
           initialAnchor: widget.anchor,
-          valueAxis: null,
-          timeAxis: null,
           crosshairEnabled: widget.crosshair,
           layers: [
             LineLayer<LiveBar>(valueOf: (b) => b.close),

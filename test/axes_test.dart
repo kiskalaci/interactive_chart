@@ -131,7 +131,8 @@ void main() {
     ) async {
       // Small values first, then a big spike far to the right.
       final values = [
-        for (var i = 0; i < 1000; i++) i < 500 ? 1.0 + i % 5 : 2000000.0 + i,
+        for (var i = 0; i < 1000; i++)
+          if (i < 500) 1.0 + i % 5 else 2000000.0 + i,
       ];
       final h = _chart(values: values);
       await tester.pumpWidget(h.app(intSeries(0, 1000)));
@@ -352,7 +353,7 @@ void main() {
     ) async {
       final h = await _pump(tester);
       final axis = valueAxis(tester, h);
-      final localY = 120.0;
+      const localY = 120.0;
       final at = Offset(axis.center.dx, axis.top + localY);
       final value = h.ctx.valueOfViewportY(localY);
       final span = h.ctx.valueMax - h.ctx.valueMin;
@@ -429,7 +430,7 @@ void main() {
     const valueStyle = TextStyle(fontSize: 12, color: Color(0xFF00AA00));
     // Daily bars from 2023-12-01 so there is a year boundary and month
     // boundaries in view, with room on both sides of each label.
-    final start = DateTime(2023, 12, 1);
+    final start = DateTime(2023, 12);
     // Fit the 120 days on the screen, whatever its width, so the year and the
     // February boundary are both in view.
     final screenWidth = currentScreen?.screen.width ?? 800;
@@ -486,16 +487,16 @@ void main() {
     }) async {
       final ctx = InteractiveChartContext(slotExtent: 10)
         ..setViewportSize(300, 100)
-        ..setSlotCount(30);
-      ctx.timeTicks = [
-        for (var i = 0; i < weights.length; i++)
-          TickMark(
-            index: 5 + i * 10,
-            time: minuteTime(5 + i * 10),
-            weight: weights[i],
-            projected: false,
-          ),
-      ];
+        ..setSlotCount(30)
+        ..timeTicks = [
+          for (var i = 0; i < weights.length; i++)
+            TickMark(
+              index: 5 + i * 10,
+              time: minuteTime(5 + i * 10),
+              weight: weights[i],
+              projected: false,
+            ),
+        ];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -555,12 +556,22 @@ void main() {
       // dropped, so the heaviest *visible* mark is the weight-50 one.
       final ctx = InteractiveChartContext(slotExtent: 10)
         ..setViewportSize(300, 100)
-        ..setSlotCount(30);
-      ctx.timeTicks = [
-        TickMark(index: 0, time: minuteTime(0), weight: 70, projected: false),
-        TickMark(index: 15, time: minuteTime(15), weight: 50, projected: false),
-        TickMark(index: 25, time: minuteTime(25), weight: 20, projected: false),
-      ];
+        ..setSlotCount(30)
+        ..timeTicks = [
+          TickMark(index: 0, time: minuteTime(0), weight: 70, projected: false),
+          TickMark(
+            index: 15,
+            time: minuteTime(15),
+            weight: 50,
+            projected: false,
+          ),
+          TickMark(
+            index: 25,
+            time: minuteTime(25),
+            weight: 20,
+            projected: false,
+          ),
+        ];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -609,7 +620,7 @@ void main() {
     ) async {
       // Daily bars from 2023-12-01, fitted to the screen so the year, month
       // and day tiers can all show.
-      final start = DateTime(2023, 12, 1);
+      final start = DateTime(2023, 12);
       final screenWidth = currentScreen?.screen.width ?? 800;
       final h = ChartHarness<int>(
         timeOf: (i) => start.add(Duration(days: i)),

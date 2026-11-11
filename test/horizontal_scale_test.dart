@@ -92,7 +92,8 @@ void main() {
     }
 
     test("never includes a projected slot (R-TIME-27)", () {
-      final ctx = _ctx(slots: 100)..jumpTo(1e9); // as far right as allowed
+      final ctx = _ctx(slots: 100)
+        ..jumpTo(1000000000); // as far right as allowed
       expect(ctx.visibleEnd, lessThanOrEqualTo(100));
       expect(ctx.visibleStart, lessThanOrEqualTo(ctx.visibleEnd));
     });
@@ -100,7 +101,7 @@ void main() {
 
   group("initial anchor", () {
     testWidgets("TC-X-03 left opens on the first datum", (tester) async {
-      final h = _bareHarness(anchor: ChartAnchor.left);
+      final h = _bareHarness();
       await tester.pumpWidget(h.app(intSeries(0, 500)));
       await tester.pumpAndSettle();
       expect(h.controller.visibleRange.$1, 0);
@@ -141,7 +142,7 @@ void main() {
     testWidgets(
       "TC-X-05 applied once: data and viewport changes never re-anchor",
       (tester) async {
-        final h = _bareHarness(anchor: ChartAnchor.left);
+        final h = _bareHarness();
         await tester.pumpWidget(h.app(intSeries(0, 500)));
         await tester.pumpAndSettle();
         await tester.drag(
@@ -176,7 +177,7 @@ void main() {
     testWidgets("TC-X-06 past the newest datum up to half the viewport", (
       tester,
     ) async {
-      final h = _bareHarness(anchor: ChartAnchor.left);
+      final h = _bareHarness();
       // More bars than half a (large) viewport, so the overscroll rule applies.
       await tester.pumpWidget(h.app(intSeries(0, 1000)));
       await tester.pumpAndSettle();
@@ -213,20 +214,19 @@ void main() {
     });
 
     test("TC-X-07b jumpTo and panBy clamp at both ends", () {
-      final ctx = _ctx(slots: 100);
-      ctx.jumpTo(-500);
+      final ctx = _ctx(slots: 100)..jumpTo(-500);
       expect(ctx.scrollOffset, 0);
-      ctx.jumpTo(1e9);
+      ctx.jumpTo(1000000000);
       expect(ctx.scrollOffset, ctx.maxScrollOffset);
-      ctx.panBy(-1e9);
+      ctx.panBy(-1000000000);
       expect(ctx.scrollOffset, 0);
     });
   });
 
   group("TC-X-08 slot extent is clamped to its bounds", () {
     test("context: initial extent", () {
-      expect(_ctx(slotExtent: 0.2, minSlotExtent: 1).slotExtent, 1);
-      expect(_ctx(slotExtent: 500, maxSlotExtent: 64).slotExtent, 64);
+      expect(_ctx(slotExtent: 0.2).slotExtent, 1);
+      expect(_ctx(slotExtent: 500).slotExtent, 64);
       expect(
         _ctx(slotExtent: 10, minSlotExtent: 4, maxSlotExtent: 20).slotExtent,
         10,
@@ -234,8 +234,8 @@ void main() {
     });
 
     test("context: setSlotExtentAndScroll", () {
-      final ctx = _ctx(minSlotExtent: 4, maxSlotExtent: 20);
-      ctx.setSlotExtentAndScroll(1000, 0);
+      final ctx = _ctx(minSlotExtent: 4, maxSlotExtent: 20)
+        ..setSlotExtentAndScroll(1000, 0);
       expect(ctx.slotExtent, 20);
       ctx.setSlotExtentAndScroll(0.01, 0);
       expect(ctx.slotExtent, 4);
@@ -274,7 +274,7 @@ void main() {
     });
 
     testWidgets("shrinking recomputes the visible range", (tester) async {
-      final h = _bareHarness(anchor: ChartAnchor.left);
+      final h = _bareHarness();
       await tester.pumpWidget(h.app(intSeries(0, 500)));
       await tester.pumpAndSettle();
       final wide = h.controller.visibleRange;
@@ -291,7 +291,7 @@ void main() {
 
     testWidgetsOnce("to zero width and back", (tester) async {
       useLargeSurface(tester);
-      final h = _bareHarness(anchor: ChartAnchor.left);
+      final h = _bareHarness();
       await tester.pumpWidget(h.app(intSeries(0, 500)));
       await tester.pumpAndSettle();
       await tester.pumpWidget(h.app(intSeries(0, 500), width: 0));

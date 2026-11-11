@@ -60,7 +60,6 @@ void main() {
       expect(
         original.copyWith(placement: TimeAxisPlacement.bottom),
         const TimeAxisConfig(
-          placement: TimeAxisPlacement.bottom,
           formatter: _format,
           textStyle: TextStyle(fontSize: 10),
           emphasizedTextStyle: TextStyle(fontSize: 12),

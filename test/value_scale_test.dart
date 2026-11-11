@@ -133,7 +133,7 @@ void main() {
       );
     });
     test("CrosshairLayer", () {
-      expect(CrosshairLayer<int>().extentFor(data, 0, 3), isNull);
+      expect(const CrosshairLayer<int>().extentFor(data, 0, 3), isNull);
     });
 
     testWidgets("an opted-out layer does not move the extent", (tester) async {

@@ -36,7 +36,7 @@ class CandleLayer<T> extends ChartLayer<T> {
   final double bodyWidthRatio;
   final double minBodyWidth;
 
-  /// Fires when the candle at [index] is tapped.
+  /// Fires when the candle at `index` is tapped.
   final void Function(int index)? onTap;
 
   /// Fires with the hovered candle's index on enter, and `null` on exit.

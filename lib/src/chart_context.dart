@@ -4,7 +4,7 @@ import "package:flutter/foundation.dart";
 import "package:interactive_chart/src/chart_anchor.dart";
 import "package:interactive_chart/src/ticks.dart";
 
-/// Shared render/interaction state for one [InteractiveChart].
+/// Shared render/interaction state for one `InteractiveChart`.
 ///
 /// Deliberately generic over nothing: it knows about slots, pixels and
 /// timestamps only. Anything datum-shaped (accessors, extents) is computed
@@ -76,6 +76,8 @@ class InteractiveChartContext extends ChangeNotifier {
 
   /// Pins the view to the offset [offsetFor] returns, now and whenever the
   /// viewport width changes, until the user or the data moves it.
+  // A setter cannot express "pin to a computed offset".
+  // ignore: use_setters_to_change_properties
   void pinTo(double Function() offsetFor) {
     _pin = offsetFor;
   }
@@ -189,6 +191,8 @@ class InteractiveChartContext extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Public API mirrors Controller.setAutoscale.
+  // ignore: avoid_positional_boolean_parameters
   void setAutoscale(bool value) {
     if (autoscale == value) {
       return;

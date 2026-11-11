@@ -56,7 +56,6 @@ void main() {
       expect(
         original.copyWith(placement: ValueAxisPlacement.right),
         const ValueAxisConfig(
-          placement: ValueAxisPlacement.right,
           formatter: _format,
           textStyle: TextStyle(fontSize: 10),
         ),

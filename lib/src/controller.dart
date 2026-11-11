@@ -39,6 +39,7 @@ class InteractiveChartController extends ChangeNotifier {
 
   int? get highlightedIndex => _ctx?.highlightedIndex;
 
+  // ignore: avoid_positional_boolean_parameters
   void setAutoscale(bool value) => _ctx?.setAutoscale(value);
 
   /// Scrolls to the newest data (R-SCROLL-5's manual counterpart: "jump to

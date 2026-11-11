@@ -33,7 +33,7 @@ class LineLayer<T> extends ChartLayer<T> {
   final bool fill;
   final bool contributesToExtent;
 
-  /// Fires when the point at [index] is tapped.
+  /// Fires when the point at `index` is tapped.
   final void Function(int index)? onPointTap;
 
   /// Fires with the hovered point's index on enter, and `null` on exit.

@@ -401,7 +401,8 @@ void main() {
     for (final bad in [double.nan, double.infinity, double.negativeInfinity]) {
       testWidgets("line breaks at $bad and extent ignores it", (tester) async {
         List<double> values({double? at4}) => [
-          for (var i = 0; i < 10; i++) i == 4 && at4 != null ? at4 : 50.0 + i,
+          for (var i = 0; i < 10; i++)
+            if (i == 4 && at4 != null) at4 else 50.0 + i,
         ];
         Future<(int, ChartHarness<int>)> pump(List<double> v) async {
           final h = ChartHarness<int>(

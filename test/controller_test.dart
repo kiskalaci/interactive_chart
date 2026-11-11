@@ -36,8 +36,6 @@ Widget _app(
         data: data ?? intSeries(0, 600),
         timeOf: minuteTime,
         initialAnchor: anchor,
-        valueAxis: null,
-        timeAxis: null,
         onVisibleRangeChanged: onRange,
         onIndexHighlighted: onIndex,
         layers: [LineLayer<int>(valueOf: (i) => 100.0 + i % 13)],
@@ -119,8 +117,9 @@ void main() {
       await tester.pumpWidget(_app(c));
       await tester.pumpAndSettle();
       final n = _Notifications(c);
-      c.setAutoscale(true); // already on
-      c.clearHighlight(); // nothing highlighted
+      c
+        ..setAutoscale(true) // already on
+        ..clearHighlight(); // nothing highlighted
       expect(n.count, 0);
     });
   });
@@ -309,7 +308,7 @@ void main() {
       void listener() => called++;
       expect(() => c.addListener(listener), returnsNormally);
       c.removeListener(listener);
-      expect(() => c.dispose(), returnsNormally);
+      expect(c.dispose, returnsNormally);
       expect(called, 0);
     });
 
@@ -325,7 +324,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       expect(c.isAttached, isFalse);
       // Safe to call afterwards: nothing is listening to a dead context.
-      expect(() => c.jumpToLatest(), returnsNormally);
+      expect(c.jumpToLatest, returnsNormally);
       expect(() => c.setAutoscale(false), returnsNormally);
       expect(c.clearHighlight, returnsNormally);
       expect(c.visibleRange, (0, 0));
