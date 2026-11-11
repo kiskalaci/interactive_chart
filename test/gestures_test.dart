@@ -16,6 +16,7 @@ ChartHarness<int> _chart({
   bool panEnabled = true,
   bool zoomEnabled = true,
   bool crosshairEnabled = true,
+  double verticalPanThreshold = 16,
   double slotExtent = 8,
   double minSlotExtent = 1,
   double maxSlotExtent = 64,
@@ -25,6 +26,7 @@ ChartHarness<int> _chart({
   panEnabled: panEnabled,
   zoomEnabled: zoomEnabled,
   crosshairEnabled: crosshairEnabled,
+  verticalPanThreshold: verticalPanThreshold,
   slotExtent: slotExtent,
   minSlotExtent: minSlotExtent,
   maxSlotExtent: maxSlotExtent,
@@ -42,6 +44,7 @@ Future<ChartHarness<int>> _pump(
   bool panEnabled = true,
   bool zoomEnabled = true,
   bool crosshairEnabled = true,
+  double verticalPanThreshold = 16,
   double slotExtent = 8,
   double minSlotExtent = 1,
   double maxSlotExtent = 64,
@@ -51,6 +54,7 @@ Future<ChartHarness<int>> _pump(
     panEnabled: panEnabled,
     zoomEnabled: zoomEnabled,
     crosshairEnabled: crosshairEnabled,
+    verticalPanThreshold: verticalPanThreshold,
     slotExtent: slotExtent,
     minSlotExtent: minSlotExtent,
     maxSlotExtent: maxSlotExtent,
@@ -205,13 +209,81 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(h.controller.autoscale, isFalse);
-    // Direct manipulation: the value under the finger moves down with it.
+    // Direct manipulation: the value under the finger moves down with it,
+    // less the small distance travelled before vertical panning engaged.
     final moved = h.ctx.yOf(probe) - yBefore;
-    expect(moved, closeTo(80, 8));
+    expect(moved, inInclusiveRange(80 - 40, 80));
     // The window keeps its size; it only slides.
     expect(h.ctx.valueMax - h.ctx.valueMin, closeTo(span, span * 1e-9));
     // And x panned too.
     expect(h.ctx.scrollOffset, closeTo(60, 2));
+  });
+
+  group("TC-GEST-03b vertical panning needs deliberate vertical movement", () {
+    testWidgets("a horizontal drag with a little vertical wobble keeps "
+        "autoscale on", (tester) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(-200, 20));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isTrue);
+      expect(h.ctx.scrollOffset, closeTo(200, 2));
+    });
+
+    testWidgets("a long horizontal swipe that drifts keeps autoscale on", (
+      tester,
+    ) async {
+      final h = await _pump(tester);
+      // 60 px of vertical travel is over the minimum, but a long way short of
+      // half the 400 px of horizontal travel.
+      await tester.drag(_chartFinder, const Offset(-400, 60));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isTrue);
+    });
+
+    testWidgets("a deliberate vertical drag still pans the value axis", (
+      tester,
+    ) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(0, 80));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isFalse);
+    });
+
+    testWidgets("a drag past the default threshold pans", (tester) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(0, 30));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isFalse);
+    });
+
+    testWidgets("verticalPanThreshold raises how far a drag must go", (
+      tester,
+    ) async {
+      final h = await _pump(tester, verticalPanThreshold: 60);
+      await tester.drag(_chartFinder, const Offset(0, 30));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isTrue);
+      await tester.drag(_chartFinder, const Offset(0, 100));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isFalse);
+    });
+
+    testWidgets("a zero threshold still ignores a purely horizontal drag", (
+      tester,
+    ) async {
+      final h = await _pump(tester, verticalPanThreshold: 0);
+      await tester.drag(_chartFinder, const Offset(-200, 0));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isTrue);
+    });
+
+    testWidgets("a steep diagonal drag pans both axes", (tester) async {
+      final h = await _pump(tester);
+      await tester.drag(_chartFinder, const Offset(-60, 80));
+      await tester.pumpAndSettle();
+      expect(h.controller.autoscale, isFalse);
+      expect(h.ctx.scrollOffset, closeTo(60, 2));
+    });
   });
 
   // Pinch geometry is relative to the chart's width, so the same test runs on

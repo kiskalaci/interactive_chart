@@ -42,6 +42,7 @@ class ChartHarness<T> {
     this.panEnabled = true,
     this.zoomEnabled = true,
     this.crosshairEnabled = true,
+    this.verticalPanThreshold = 16,
     this.valueAxis = const ValueAxisConfig(),
     this.timeAxis = const TimeAxisConfig(),
   });
@@ -55,6 +56,7 @@ class ChartHarness<T> {
   final bool panEnabled;
   final bool zoomEnabled;
   final bool crosshairEnabled;
+  final double verticalPanThreshold;
   final double maxSlotExtent;
   final ValueAxisConfig? valueAxis;
   final TimeAxisConfig? timeAxis;
@@ -77,6 +79,7 @@ class ChartHarness<T> {
       panEnabled: panEnabled,
       zoomEnabled: zoomEnabled,
       crosshairEnabled: crosshairEnabled,
+      verticalPanThreshold: verticalPanThreshold,
       valueAxis: valueAxis,
       timeAxis: timeAxis,
       layers: [...?layers?.call(), ContextProbe<T>((c) => ctx = c)],

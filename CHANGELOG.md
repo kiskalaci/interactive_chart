@@ -1,5 +1,6 @@
 ## Unreleased
 
+* A drag only pans the value axis (switching autoscale off) once its vertical travel reaches `verticalPanThreshold` (new parameter, default 16 px) and half its horizontal travel, so horizontal swipes no longer turn autoscale off by accident.
 * `PriceTagLayer`: a horizontal line at the latest value of the dataset and a tag with that value on the value axis. The value is cropped, not rounded, to `precision` decimals (default 2).
 * `ChartLayer.buildValueAxisOverlay` and `ChartLayer.measureValueAxisOverlayWidth`: optional hooks for layers that draw on the value-axis gutter.
 * **Breaking:** time-axis tick weights are now the exported `TickMarkWeight` enum (each member has a `double value`) instead of `int`. `TimeAxisConfig.formatter` takes `(DateTime, TickMarkWeight)`.

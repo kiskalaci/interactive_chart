@@ -57,6 +57,12 @@ Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
     max: 6,
   ),
   panEnabled: context.knobs.boolean(label: "Pan enabled", initialValue: true),
+  verticalPanThreshold: context.knobs.double.slider(
+    label: "Vertical pan threshold",
+    initialValue: 16,
+    min: 0,
+    max: 80,
+  ),
   zoomEnabled: context.knobs.boolean(label: "Zoom enabled", initialValue: true),
   crosshairEnabled: context.knobs.boolean(
     label: "Crosshair enabled",
@@ -77,6 +83,7 @@ class _InteractiveChartDemo extends StatefulWidget {
     required this.showPriceTag,
     required this.priceTagPrecision,
     required this.panEnabled,
+    required this.verticalPanThreshold,
     required this.zoomEnabled,
     required this.crosshairEnabled,
   });
@@ -90,6 +97,7 @@ class _InteractiveChartDemo extends StatefulWidget {
   final bool showPriceTag;
   final int priceTagPrecision;
   final bool panEnabled;
+  final double verticalPanThreshold;
   final bool zoomEnabled;
   final bool crosshairEnabled;
 
@@ -423,6 +431,7 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
                     initialAnchor: widget.initialAnchor,
                     initialSlotExtent: widget.initialSlotExtent,
                     panEnabled: widget.panEnabled,
+                    verticalPanThreshold: widget.verticalPanThreshold,
                     zoomEnabled: widget.zoomEnabled,
                     crosshairEnabled: widget.crosshairEnabled,
                     onVisibleRangeChanged: _onVisibleRangeChanged,

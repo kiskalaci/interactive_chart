@@ -49,10 +49,14 @@ class InteractiveChart<T> extends StatefulWidget {
     this.panEnabled = true,
     this.zoomEnabled = true,
     this.crosshairEnabled = true,
+    this.verticalPanThreshold = 16,
     this.onVisibleRangeChanged,
     this.onIndexHighlighted,
     super.key,
-  });
+  }) : assert(
+         verticalPanThreshold >= 0,
+         "verticalPanThreshold must not be negative",
+       );
 
   /// The series, sorted oldest to newest by [timeOf]. Appending, updating the
   /// last datum and prepending older data keep the current pan and zoom.
@@ -85,6 +89,16 @@ class InteractiveChart<T> extends StatefulWidget {
   final bool panEnabled;
   final bool zoomEnabled;
   final bool crosshairEnabled;
+
+  /// How far, in logical pixels, a drag must travel vertically before it pans
+  /// the value axis (which switches autoscale off). Until then a drag only
+  /// scrolls and zooms horizontally, so the vertical wobble of a horizontal
+  /// swipe leaves autoscale alone. The vertical travel must also reach half
+  /// the horizontal travel, so a long swipe that drifts still counts as
+  /// horizontal. Raise it to make accidental switching harder, lower it (0
+  /// disables the minimum) for a more eager vertical pan. Does not affect
+  /// wheel or trackpad scrolling.
+  final double verticalPanThreshold;
   final void Function(int start, int end)? onVisibleRangeChanged;
   final void Function(int? index)? onIndexHighlighted;
 
@@ -139,6 +153,17 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   /// movement has already been applied to the value extent.
   double? _gestureStartFocalY;
   double _appliedDy = 0;
+
+  /// Whether the current drag has moved far enough vertically to pan the
+  /// value axis. Until then a drag only scrolls (and zooms) horizontally, so
+  /// the small vertical wobble of a horizontal swipe cannot switch autoscale
+  /// off. Once engaged it stays engaged until the gesture ends.
+  bool _verticalPanEngaged = false;
+
+  /// Vertical travel must also reach this fraction of the horizontal travel,
+  /// so a long horizontal swipe that drifts a little still counts as
+  /// horizontal. 0.5 is a drag steeper than about 27 degrees.
+  static const _verticalPanDominance = 0.5;
 
   final _viewportKey = GlobalKey();
   late final ScrollGuard _scrollGuard;
@@ -378,6 +403,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
         ? _lastPointerDownY!
         : details.localFocalPoint.dy;
     _appliedDy = 0;
+    _verticalPanEngaged = false;
     _gestureStartContentPixelAtFocal = ctx.scrollOffset + focalX;
   }
 
@@ -411,13 +437,32 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     ctx.setSlotExtentAndScroll(newSlotExtent, newScrollOffset);
 
     if (widget.panEnabled) {
-      // Cumulative from the gesture's start, so the slop distance travelled
-      // before the gesture was recognised is applied too.
+      // Cumulative from the gesture's start.
       final total =
           details.localFocalPoint.dy -
           (_gestureStartFocalY ?? details.localFocalPoint.dy);
-      ctx.panValueByPixels(total - _appliedDy);
-      _appliedDy = total;
+      if (!_verticalPanEngaged) {
+        final horizontal =
+            (details.localFocalPoint.dx -
+                    (_gestureStartFocalX ?? details.localFocalPoint.dx))
+                .abs();
+        if (total.abs() >=
+            math.max(
+              widget.verticalPanThreshold,
+              horizontal * _verticalPanDominance,
+            )) {
+          _verticalPanEngaged = true;
+          // The first stretch, up to the minimum, is not applied: the pan
+          // starts smoothly instead of jumping to catch up. Anything beyond
+          // it (a fast flick can cover a lot in one update) is.
+          _appliedDy =
+              total.sign * math.min(total.abs(), widget.verticalPanThreshold);
+        }
+      }
+      if (_verticalPanEngaged) {
+        ctx.panValueByPixels(total - _appliedDy);
+        _appliedDy = total;
+      }
     }
   }
 
@@ -425,6 +470,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     _gestureStartSlotExtent = null;
     _gestureStartFocalX = null;
     _gestureStartFocalY = null;
+    _verticalPanEngaged = false;
     _gestureStartContentPixelAtFocal = null;
   }
 

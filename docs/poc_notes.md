@@ -153,10 +153,15 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
 - **`onIndexHighlighted` reports `null` over a projected slot** (R-TIME-29).
   The crosshair still shows the projected time badge; there is no separate
   `onProjectedTimeHighlighted` callback yet.
-- **Autoscale stays on for horizontal drags.** `panValueByPixels` ignores a
-  zero vertical delta, so a purely horizontal pan no longer switches
-  autoscale off. Any drag with vertical movement still does (see the
-  R-SCROLL-6 deviation above).
+- **Autoscale stays on for horizontal drags.** A drag pans the value axis
+  (and so switches autoscale off) only once its vertical travel reaches
+  `max(verticalPanThreshold, 0.5 × its horizontal travel)`; `verticalPanThreshold` is an `InteractiveChart` parameter, default 16 px. The wobble of a horizontal swipe
+  therefore leaves autoscale alone, and so does a long swipe that drifts,
+  while a deliberate vertical or steep diagonal drag still pans (see the
+  R-SCROLL-6 deviation above). Once engaged, vertical panning stays on for the
+  rest of that gesture. It starts from the threshold rather than jumping to
+  catch up, so the content ends up the threshold distance short of the
+  finger. Wheel and trackpad scrolling are unaffected.
 - **Browser back/forward-swipe suppression (web only)** — horizontal
   trackpad/wheel scroll while the pointer is over the chart no longer
   triggers the browser's native history-navigation gesture. Implemented as
@@ -469,6 +474,7 @@ Behaviours the tests pin down, worth knowing when writing more:
 | TC-GEST-01 | ✅ Horizontal drag | Pans x by the drag distance; clamped at both ends | W | P0 |
 | TC-GEST-02 | ✅ Purely horizontal drag | Autoscale stays on (`test/prepend_test.dart`) | W | P0 |
 | TC-GEST-03 | ✅ Drag with vertical movement | Pans the value extent and switches autoscale off (documented deviation from R-SCROLL-6) | W | P0 |
+| TC-GEST-03b | ✅ Vertical panning needs deliberate vertical movement | A horizontal drag with a little wobble, or a long swipe that drifts, keeps autoscale on; a vertical or steep diagonal drag still pans | W | P0 |
 | TC-GEST-04 | ✅ Two-finger pinch, focal point fixed | Datum under the focal point stays under it (< 0.5 px) through the whole gesture | W | P0 |
 | TC-GEST-05 | ✅ Sustained pinch over 100+ update events | No cumulative drift (gesture-start reference) | W | P0 |
 | TC-GEST-06 | ✅ Pinch past `minSlotExtent` / `maxSlotExtent` | Clamped; focal point still held at the clamp | W | P0 |
