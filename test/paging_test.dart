@@ -280,7 +280,7 @@ void main() {
         for (final m in _host.ctx.timeTicks)
           if (_host.ctx.xOf(m.index) >= 0 &&
               _host.ctx.xOf(m.index) <= _host.ctx.viewportWidth)
-            "${m.time.toIso8601String()}:${m.weight}",
+            "${m.time.toIso8601String()}:${m.weight.value.toInt()}",
       ];
 
       final extent = (_host.ctx.valueMin, _host.ctx.valueMax);

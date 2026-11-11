@@ -1,9 +1,10 @@
 import "dart:math" as math;
 
 import "package:flutter/widgets.dart";
+import "package:interactive_chart/src/time_axis/tick_mark_weight.dart";
 import "package:interactive_chart/src/time_axis/time_axis_config.dart";
 import "package:interactive_chart/src/chart_context.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
 
 /// Renders tick labels as positioned [Text] widgets rather than painting
 /// them to a canvas, one per surviving mark.
@@ -21,7 +22,7 @@ class TimeAxisView extends StatelessWidget {
           <({TickMark mark, String text, TextStyle style, double left})>[];
       for (final mark in ctx.timeTicks) {
         final x = ctx.xOf(mark.index);
-        final style = mark.weight >= 60
+        final style = mark.weight >= TickMarkWeight.month
             ? config.emphasizedTextStyle
             : config.textStyle;
         final text = config.format(mark.time, mark.weight);
@@ -40,9 +41,9 @@ class TimeAxisView extends StatelessWidget {
 
       // The coarsest tier currently on screen is set in bold, so the reader
       // can tell which boundary (year, month, day, ...) the labels anchor to.
-      var maxWeight = 0;
+      TickMarkWeight? maxWeight;
       for (final v in visible) {
-        if (v.mark.weight > maxWeight) {
+        if (maxWeight == null || v.mark.weight > maxWeight) {
           maxWeight = v.mark.weight;
         }
       }

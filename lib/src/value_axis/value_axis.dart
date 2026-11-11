@@ -2,7 +2,7 @@ import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/value_axis/value_axis_config.dart";
 import "package:interactive_chart/src/value_axis/value_axis_placement.dart";
 import "package:interactive_chart/src/chart_context.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 /// Renders tick labels for the value axis gutter as positioned [Text]
 /// widgets. Self-sizing (measuring the widest label) is done by

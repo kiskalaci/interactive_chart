@@ -5,7 +5,7 @@ import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
 
 import "support/chart_harness.dart";
 import "support/variants.dart";
@@ -21,7 +21,7 @@ Finder get _timeLabels =>
     find.byWidgetPredicate((w) => w is Text && (w.data ?? "").startsWith("T"));
 
 String _v(double v) => "V${v.toStringAsFixed(1)}";
-String _t(DateTime t, int weight) => "T${t.hour}:${t.minute}";
+String _t(DateTime t, TickMarkWeight weight) => "T${t.hour}:${t.minute}";
 
 ChartHarness<int> _chart({
   ValueAxisConfig? valueAxis = const ValueAxisConfig(),
@@ -260,9 +260,24 @@ void main() {
         ..setSlotCount(30);
       DateTime t(int i) => minuteTime(i);
       ctx.timeTicks = [
-        TickMark(index: 0, time: t(0), weight: 20, projected: false),
-        TickMark(index: 15, time: t(15), weight: 20, projected: false),
-        TickMark(index: 29, time: t(29), weight: 20, projected: false),
+        TickMark(
+          index: 0,
+          time: t(0),
+          weight: TickMarkWeight.minute1,
+          projected: false,
+        ),
+        TickMark(
+          index: 15,
+          time: t(15),
+          weight: TickMarkWeight.minute1,
+          projected: false,
+        ),
+        TickMark(
+          index: 29,
+          time: t(29),
+          weight: TickMarkWeight.minute1,
+          projected: false,
+        ),
       ];
       await tester.pumpWidget(
         Directionality(
@@ -482,7 +497,7 @@ void main() {
     // room so none are dropped. The label text is the weight itself.
     Future<Map<String, FontWeight?>> pumpMarks(
       WidgetTester tester,
-      List<int> weights, {
+      List<TickMarkWeight> weights, {
       TextStyle? style,
     }) async {
       final ctx = InteractiveChartContext(slotExtent: 10)
@@ -508,9 +523,11 @@ void main() {
               child: TimeAxisView(
                 ctx: ctx,
                 config: style == null
-                    ? TimeAxisConfig(formatter: (time, w) => "T$w")
+                    ? TimeAxisConfig(
+                        formatter: (time, w) => "T${w.value.toInt()}",
+                      )
                     : TimeAxisConfig(
-                        formatter: (time, w) => "T$w",
+                        formatter: (time, w) => "T${w.value.toInt()}",
                         textStyle: style,
                         emphasizedTextStyle: style,
                       ),
@@ -526,26 +543,38 @@ void main() {
     }
 
     testWidgets("only the heaviest marks are bold", (tester) async {
-      final weights = await pumpMarks(tester, [70, 50, 20]);
+      final weights = await pumpMarks(tester, [
+        TickMarkWeight.year,
+        TickMarkWeight.day,
+        TickMarkWeight.minute1,
+      ]);
       expect(weights["T70"], FontWeight.bold);
       expect(weights["T50"], isNot(FontWeight.bold));
       expect(weights["T20"], isNot(FontWeight.bold));
     });
 
     testWidgets("every mark sharing the top weight is bold", (tester) async {
-      final weights = await pumpMarks(tester, [50, 20, 50]);
+      final weights = await pumpMarks(tester, [
+        TickMarkWeight.day,
+        TickMarkWeight.minute1,
+        TickMarkWeight.day,
+      ]);
       expect(weights["T50"], FontWeight.bold);
       expect(weights["T20"], isNot(FontWeight.bold));
     });
 
     testWidgets("applies at any tier, not only year or month", (tester) async {
-      final weights = await pumpMarks(tester, [20, 10, 20]);
+      final weights = await pumpMarks(tester, [
+        TickMarkWeight.minute1,
+        TickMarkWeight.second,
+        TickMarkWeight.minute1,
+      ]);
       expect(weights["T20"], FontWeight.bold);
       expect(weights["T10"], isNot(FontWeight.bold));
     });
 
     testWidgets("a single visible mark is bold", (tester) async {
-      final weights = await pumpMarks(tester, [10]);
+      final weights = await pumpMarks(tester, [TickMarkWeight.second]);
       expect(weights["T10"], FontWeight.bold);
     });
 
@@ -558,17 +587,22 @@ void main() {
         ..setViewportSize(300, 100)
         ..setSlotCount(30)
         ..timeTicks = [
-          TickMark(index: 0, time: minuteTime(0), weight: 70, projected: false),
+          TickMark(
+            index: 0,
+            time: minuteTime(0),
+            weight: TickMarkWeight.year,
+            projected: false,
+          ),
           TickMark(
             index: 15,
             time: minuteTime(15),
-            weight: 50,
+            weight: TickMarkWeight.day,
             projected: false,
           ),
           TickMark(
             index: 25,
             time: minuteTime(25),
-            weight: 20,
+            weight: TickMarkWeight.minute1,
             projected: false,
           ),
         ];
@@ -582,7 +616,9 @@ void main() {
               height: 22,
               child: TimeAxisView(
                 ctx: ctx,
-                config: TimeAxisConfig(formatter: (time, w) => "TLABEL-$w"),
+                config: TimeAxisConfig(
+                  formatter: (time, w) => "TLABEL-${w.value.toInt()}",
+                ),
               ),
             ),
           ),
@@ -599,14 +635,17 @@ void main() {
 
     testWidgets("keeps the configured colour and size", (tester) async {
       const style = TextStyle(fontSize: 13, color: Color(0xFF123456));
-      await pumpMarks(tester, [20, 10], style: style);
+      await pumpMarks(tester, [
+        TickMarkWeight.minute1,
+        TickMarkWeight.second,
+      ], style: style);
       final bold = tester.widget<Text>(find.text("T20")).style!;
       expect(bold.color, style.color);
       expect(bold.fontSize, 13);
     });
 
     testWidgets("the bold label stays centred on its slot", (tester) async {
-      await pumpMarks(tester, [70, 20]);
+      await pumpMarks(tester, [TickMarkWeight.year, TickMarkWeight.minute1]);
       // Slot 5 of 10 px slots: centre x = 55.
       final rect = tester.getRect(find.text("T70"));
       expect(

@@ -73,7 +73,7 @@ so tests and PRs can reference it.
 | **Autoscale** | Value extent derived automatically from the visible slot range. |
 | **Tick mark** | One candidate label position on the time axis, bound to a slot index. |
 | **Projected slot** | A slot beyond the end of the data, in the overscroll region. It has a time point but no datum. |
-| **Tick weight** | The importance rank of a tick mark, from the coarsest calendar boundary it crosses (year > month > day > hour > minute > second). Drives both which marks survive and how they are formatted. |
+| **Tick weight** | The importance rank of a tick mark, from the coarsest calendar boundary it crosses (year > month > day > hour > minute > second). Modelled as the `TickMarkWeight` enum, each member carrying a numeric `value` (see R-TIME-1). Drives both which marks survive and how they are formatted. |
 
 ---
 
@@ -413,6 +413,14 @@ calendar boundary they cross. Zooming in admits progressively finer marks.
   | 10 | the second changes | `14:36:05` |
   | 0 | anything finer | `14:36:05.250` |
 
+  The ladder is exposed as the `TickMarkWeight` enum rather than as bare
+  integers: each member carries its numeric `value` (a `double`) and the enum
+  is `Comparable` with `>`, `>=`, `<`, `<=`. The tiers and values match
+  TradingView's (`second` 10, `minute1` 20, `minute5` 21, `minute30` 22,
+  `hour1` 30, `hour3` 31, `hour6` 32, `hour12` 33, `day` 50, `month` 60,
+  `year` 70). Formatters and styles key off the enum, never off a magic
+  number.
+
 - **R-TIME-2 [M]** The first datum in the dataset takes the highest weight, so
   the range always opens with maximum context.
 - **R-TIME-3 [M]** Weight is a property of a **datum relative to its
@@ -562,7 +570,10 @@ most recent, most important data.
   slot becomes real. If the arriving timestamp matches the projection, the mark
   set must be unchanged — no visual jump at the moment of append, which is the
   common case on a live feed. If it does not match, marks from that index
-  onward are rebuilt.
+  onward are rebuilt. The one allowed exception is the mark at the very edge
+  of the window: appending a slot can bring a heavier tier (e.g. a 5-minute
+  mark) into range, and that mark outranks, and so displaces, a lighter
+  neighbour within `minIndexGap` of it.
 - **R-TIME-31 [S]** Under growth direction `left` (R-SCROLL-3) the same
   projection applies at the mirrored edge. Projection is only ever applied at
   the **growth** edge: the opposite edge is unloaded history, where fabricating

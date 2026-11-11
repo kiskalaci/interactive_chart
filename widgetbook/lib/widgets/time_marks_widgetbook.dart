@@ -11,10 +11,10 @@ import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 /// Time axis marks of different weights.
 ///
 /// A mark's weight is set by the coarsest boundary it crosses relative to the
-/// previous datum: year (70), month (60), day (50), hour (30), minute (20),
-/// otherwise 10. The series spans several years, so zooming in and out shows
+/// previous datum, see [TickMarkWeight]: year, month, day, 12/6/3/1 hours,
+/// 30/5/1 minutes, otherwise second. The series spans several years, so zooming in and out shows
 /// every tier. Heavier marks win when labels compete for space, and marks of
-/// weight 60 and above use the emphasized text style. The heaviest weight
+/// weight month and above use the emphasized text style. The heaviest weight
 /// currently on screen is always bold.
 @widgetbook.UseCase(name: "Time mark weights", type: InteractiveChart)
 Widget timeMarkWeightsUseCase(BuildContext context) {
@@ -69,17 +69,18 @@ final _day = DateFormat.d();
 final _hourMinute = DateFormat.Hm();
 final _hourMinuteSecond = DateFormat.Hms();
 
-String _label(DateTime t, int weight) {
-  if (weight >= 70) {
+String _label(DateTime t, TickMarkWeight weight) {
+  if (weight >= TickMarkWeight.year) {
     return _year.format(t);
   }
-  if (weight >= 60) {
+  if (weight >= TickMarkWeight.month) {
     return _month.format(t);
   }
-  if (weight >= 50) {
+  if (weight >= TickMarkWeight.day) {
     return _day.format(t);
   }
-  return (weight >= 20 ? _hourMinute : _hourMinuteSecond).format(t);
+  return (weight >= TickMarkWeight.minute1 ? _hourMinute : _hourMinuteSecond)
+      .format(t);
 }
 
 class _TimeMarksDemo extends StatelessWidget {
@@ -143,7 +144,7 @@ class _TimeMarksDemo extends StatelessWidget {
         timeAxis: TimeAxisConfig(
           placement: timeAxisPlacement,
           formatter: showWeights
-              ? (t, weight) => "${_label(t, weight)} w$weight"
+              ? (t, weight) => "${_label(t, weight)} ${weight.name}"
               : _label,
         ),
         layers: [

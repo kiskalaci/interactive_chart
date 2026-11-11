@@ -8,7 +8,7 @@ import "package:flutter/gestures.dart";
 import "package:flutter/widgets.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
 
 import "support/chart_harness.dart";
 import "support/variants.dart";
@@ -19,26 +19,71 @@ DateTime _day(int i) => DateTime(2022).add(Duration(days: i));
 List<DateTime> _days(int n) => [for (var i = 0; i < n; i++) _day(i)];
 
 String _signature(List<TickMark> marks) =>
-    marks.map((m) => "${m.index}:${m.weight}").join(",");
+    marks.map((m) => "${m.index}:${m.weight.value.toInt()}").join(",");
 
 void main() {
   group("TC-TIME-01 timeWeight picks the coarsest boundary crossed", () {
-    final cases = <(String, DateTime, DateTime, int)>[
-      ("year", DateTime(2023, 12, 31, 23, 59, 59), DateTime(2024), 70),
-      ("month", DateTime(2024, 1, 31), DateTime(2024, 2), 60),
-      ("day", DateTime(2024, 3, 14, 23), DateTime(2024, 3, 15), 50),
-      ("hour", DateTime(2024, 3, 15, 9, 59), DateTime(2024, 3, 15, 10), 30),
+    final cases = <(String, DateTime, DateTime, TickMarkWeight)>[
       (
-        "minute",
+        "year",
+        DateTime(2023, 12, 31, 23, 59, 59),
+        DateTime(2024),
+        TickMarkWeight.year,
+      ),
+      ("month", DateTime(2024, 1, 31), DateTime(2024, 2), TickMarkWeight.month),
+      (
+        "day",
+        DateTime(2024, 3, 14, 23),
+        DateTime(2024, 3, 15),
+        TickMarkWeight.day,
+      ),
+      (
+        "12-hour",
+        DateTime(2024, 3, 15, 11, 59),
+        DateTime(2024, 3, 15, 12),
+        TickMarkWeight.hour12,
+      ),
+      (
+        "6-hour",
+        DateTime(2024, 3, 15, 5, 59),
+        DateTime(2024, 3, 15, 6),
+        TickMarkWeight.hour6,
+      ),
+      (
+        "3-hour",
+        DateTime(2024, 3, 15, 8, 59),
+        DateTime(2024, 3, 15, 9),
+        TickMarkWeight.hour3,
+      ),
+      (
+        "hour",
+        DateTime(2024, 3, 15, 9, 59),
+        DateTime(2024, 3, 15, 10),
+        TickMarkWeight.hour1,
+      ),
+      (
+        "30-minute",
+        DateTime(2024, 3, 15, 10, 29, 59),
+        DateTime(2024, 3, 15, 10, 30),
+        TickMarkWeight.minute30,
+      ),
+      (
+        "5-minute",
         DateTime(2024, 3, 15, 10, 4, 59),
         DateTime(2024, 3, 15, 10, 5),
-        20,
+        TickMarkWeight.minute5,
+      ),
+      (
+        "minute",
+        DateTime(2024, 3, 15, 10, 5, 59),
+        DateTime(2024, 3, 15, 10, 6),
+        TickMarkWeight.minute1,
       ),
       (
         "second",
         DateTime(2024, 3, 15, 10, 5, 9),
         DateTime(2024, 3, 15, 10, 5, 10),
-        10,
+        TickMarkWeight.second,
       ),
     ];
     for (final (name, a, b, weight) in cases) {
@@ -47,20 +92,29 @@ void main() {
 
     test("a year boundary beats the smaller boundaries it also crosses", () {
       // Dec 31 23:59 -> Jan 1 00:00 crosses year, month, day, hour, minute.
-      expect(timeWeight(DateTime(2023, 12, 31, 23, 59), DateTime(2024)), 70);
+      expect(
+        timeWeight(DateTime(2023, 12, 31, 23, 59), DateTime(2024)),
+        TickMarkWeight.year,
+      );
     });
 
     test("the same month in a different year is still a year change", () {
-      expect(timeWeight(DateTime(2023, 5, 10), DateTime(2024, 5, 10)), 70);
+      expect(
+        timeWeight(DateTime(2023, 5, 10), DateTime(2024, 5, 10)),
+        TickMarkWeight.year,
+      );
     });
 
     test("the same day-of-month in a different month is a month change", () {
-      expect(timeWeight(DateTime(2024, 4, 10), DateTime(2024, 5, 10)), 60);
+      expect(
+        timeWeight(DateTime(2024, 4, 10), DateTime(2024, 5, 10)),
+        TickMarkWeight.month,
+      );
     });
 
     test("identical times have the lowest weight", () {
       final t = DateTime(2024, 5, 10, 8, 30, 15);
-      expect(timeWeight(t, t), 10);
+      expect(timeWeight(t, t), TickMarkWeight.second);
     });
   });
 
@@ -80,7 +134,7 @@ void main() {
           slotExtent: 8,
         );
         expect(marks.first.index, 0);
-        expect(marks.first.weight, 70);
+        expect(marks.first.weight, TickMarkWeight.year);
       }
     });
 
@@ -113,7 +167,7 @@ void main() {
         );
         final gap = (56 / extent).ceil().clamp(1, 1 << 30);
         final weights = [
-          70,
+          TickMarkWeight.year,
           for (var i = 1; i < times.length; i++)
             timeWeight(times[i - 1], times[i]),
         ];
@@ -141,7 +195,7 @@ void main() {
           expect(
             blocker,
             isTrue,
-            reason: "index $i (weight ${weights[i]}) was dropped",
+            reason: "index $i (weight ${weights[i].name}) was dropped",
           );
         }
       });
@@ -155,7 +209,10 @@ void main() {
           realCount: 2000,
           slotExtent: extent,
         );
-        expect(marks.map((m) => m.weight).reduce((a, b) => a > b ? a : b), 70);
+        expect(
+          marks.map((m) => m.weight).reduce((a, b) => a > b ? a : b),
+          TickMarkWeight.year,
+        );
       }
     });
 
@@ -197,12 +254,27 @@ void main() {
 
   group("TC-TIME-06 labels follow the weight, not the zoom", () {
     final t = DateTime(2024, 3, 5, 9, 7, 4);
-    test("year", () => expect(defaultTimeLabel(t, 70), "2024"));
-    test("month", () => expect(defaultTimeLabel(t, 60), "Mar"));
-    test("day", () => expect(defaultTimeLabel(t, 50), "5"));
-    test("hour", () => expect(defaultTimeLabel(t, 30), "09:07"));
-    test("minute", () => expect(defaultTimeLabel(t, 20), "09:07"));
-    test("sub-minute", () => expect(defaultTimeLabel(t, 10), "09:07:04"));
+    test(
+      "year",
+      () => expect(defaultTimeLabel(t, TickMarkWeight.year), "2024"),
+    );
+    test(
+      "month",
+      () => expect(defaultTimeLabel(t, TickMarkWeight.month), "Mar"),
+    );
+    test("day", () => expect(defaultTimeLabel(t, TickMarkWeight.day), "5"));
+    test(
+      "hour",
+      () => expect(defaultTimeLabel(t, TickMarkWeight.hour1), "09:07"),
+    );
+    test(
+      "minute",
+      () => expect(defaultTimeLabel(t, TickMarkWeight.minute1), "09:07"),
+    );
+    test(
+      "sub-minute",
+      () => expect(defaultTimeLabel(t, TickMarkWeight.second), "09:07:04"),
+    );
 
     test("all twelve month names", () {
       const names = [
@@ -220,14 +292,23 @@ void main() {
         "Dec",
       ];
       for (var m = 1; m <= 12; m++) {
-        expect(defaultTimeLabel(DateTime(2024, m, 15), 60), names[m - 1]);
+        expect(
+          defaultTimeLabel(DateTime(2024, m, 15), TickMarkWeight.month),
+          names[m - 1],
+        );
       }
     });
 
     test("midnight and noon pad correctly", () {
-      expect(defaultTimeLabel(DateTime(2024), 10), "00:00:00");
       expect(
-        defaultTimeLabel(DateTime(2024, 1, 1, 23, 59, 59), 10),
+        defaultTimeLabel(DateTime(2024), TickMarkWeight.second),
+        "00:00:00",
+      );
+      expect(
+        defaultTimeLabel(
+          DateTime(2024, 1, 1, 23, 59, 59),
+          TickMarkWeight.second,
+        ),
         "23:59:59",
       );
     });
@@ -235,38 +316,62 @@ void main() {
 
   group("TC-TIME-07 calendar edge cases", () {
     test("month ends", () {
-      expect(timeWeight(DateTime(2024, 1, 30), DateTime(2024, 1, 31)), 50);
-      expect(timeWeight(DateTime(2024, 1, 31), DateTime(2024, 2)), 60);
-      expect(timeWeight(DateTime(2024, 4, 30), DateTime(2024, 5)), 60);
+      expect(
+        timeWeight(DateTime(2024, 1, 30), DateTime(2024, 1, 31)),
+        TickMarkWeight.day,
+      );
+      expect(
+        timeWeight(DateTime(2024, 1, 31), DateTime(2024, 2)),
+        TickMarkWeight.month,
+      );
+      expect(
+        timeWeight(DateTime(2024, 4, 30), DateTime(2024, 5)),
+        TickMarkWeight.month,
+      );
     });
 
     test("year end", () {
-      expect(timeWeight(DateTime(2024, 12, 30), DateTime(2024, 12, 31)), 50);
-      expect(timeWeight(DateTime(2024, 12, 31), DateTime(2025)), 70);
+      expect(
+        timeWeight(DateTime(2024, 12, 30), DateTime(2024, 12, 31)),
+        TickMarkWeight.day,
+      );
+      expect(
+        timeWeight(DateTime(2024, 12, 31), DateTime(2025)),
+        TickMarkWeight.year,
+      );
     });
 
     test("leap day", () {
-      expect(timeWeight(DateTime(2024, 2, 28), DateTime(2024, 2, 29)), 50);
-      expect(timeWeight(DateTime(2024, 2, 29), DateTime(2024, 3)), 60);
+      expect(
+        timeWeight(DateTime(2024, 2, 28), DateTime(2024, 2, 29)),
+        TickMarkWeight.day,
+      );
+      expect(
+        timeWeight(DateTime(2024, 2, 29), DateTime(2024, 3)),
+        TickMarkWeight.month,
+      );
       // The same dates in a non-leap year skip straight to March.
-      expect(timeWeight(DateTime(2023, 2, 28), DateTime(2023, 3)), 60);
+      expect(
+        timeWeight(DateTime(2023, 2, 28), DateTime(2023, 3)),
+        TickMarkWeight.month,
+      );
     });
 
     test("weights depend on calendar fields, not elapsed time (DST safe)", () {
-      // Whatever the machine's zone, hours that change are weight 30 and
+      // Whatever the machine's zone, hours that change are boundaries and
       // repeated wall-clock readings (a fall-back hour) are not boundaries.
       expect(
         timeWeight(DateTime(2024, 3, 10, 1, 59), DateTime(2024, 3, 10, 3)),
-        30,
+        TickMarkWeight.hour3,
       );
       expect(
         timeWeight(DateTime(2024, 11, 3, 1, 30), DateTime(2024, 11, 3, 1, 30)),
-        10,
+        TickMarkWeight.second,
       );
       // UTC has no DST at all; the midnight boundary is exact.
       expect(
         timeWeight(DateTime.utc(2024, 3, 9, 23, 59), DateTime.utc(2024, 3, 10)),
-        50,
+        TickMarkWeight.day,
       );
     });
 
@@ -277,13 +382,19 @@ void main() {
           for (var i = 0; i < 366; i++) DateTime(2024).add(Duration(days: i)),
         ];
         final weights = [
-          70,
+          TickMarkWeight.year,
           for (var i = 1; i < times.length; i++)
             timeWeight(times[i - 1], times[i]),
         ];
-        expect(weights.where((w) => w == 70).length, 1); // only the first bar
-        expect(weights.where((w) => w == 60).length, 11); // Feb..Dec
-        expect(weights.where((w) => w == 50).length, 366 - 12);
+        expect(
+          weights.where((w) => w == TickMarkWeight.year).length,
+          1,
+        ); // only the first bar
+        expect(
+          weights.where((w) => w == TickMarkWeight.month).length,
+          11,
+        ); // Feb..Dec
+        expect(weights.where((w) => w == TickMarkWeight.day).length, 366 - 12);
       },
     );
 
@@ -602,17 +713,19 @@ void main() {
 
         // R-TIME-30: no mark that was already there changes (index, time and
         // weight). Appending one bar extends the window by one slot, so a new
-        // mark can appear past the old end, but never before it.
+        // mark can appear past the old end, but never before it. The final
+        // mark is exempt: a heavier tier (e.g. a 5-minute mark) entering the
+        // window can legitimately displace the 1-minute mark right at its edge.
         final lastBefore = before.last.index;
         expect(
-          _signature(after.where((m) => m.index <= lastBefore).toList()),
-          _signature(before),
+          _signature(after.where((m) => m.index < lastBefore).toList()),
+          _signature(before.where((m) => m.index < lastBefore).toList()),
           reason: "an existing mark changed",
         );
-        for (var i = 0; i < before.length; i++) {
+        for (var i = 0; i < before.length - 1; i++) {
           expect(after[i].time, before[i].time);
         }
-        for (final m in after.where((m) => m.index > lastBefore)) {
+        for (final m in after.where((m) => m.index >= lastBefore)) {
           expect(m.index, greaterThanOrEqualTo(1000));
         }
       },

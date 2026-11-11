@@ -2,8 +2,8 @@ import "package:flutter/painting.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:interactive_chart/interactive_chart.dart";
 
-String _format(DateTime t, int w) => "x";
-String _other(DateTime t, int w) => "y";
+String _format(DateTime t, TickMarkWeight w) => "x";
+String _other(DateTime t, TickMarkWeight w) => "y";
 
 void main() {
   group("TimeAxisConfig equality", () {

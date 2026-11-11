@@ -7,7 +7,8 @@ import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
+import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 import "support/variants.dart";
 

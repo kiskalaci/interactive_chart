@@ -1,5 +1,7 @@
 import "dart:math" as math;
 
+import "package:interactive_chart/src/time_axis/tick_mark_weight.dart";
+
 /// One candidate/selected label position on the time axis (§7.3).
 class TickMark {
   const TickMark({
@@ -11,31 +13,46 @@ class TickMark {
 
   final int index;
   final DateTime time;
-  final int weight;
+  final TickMarkWeight weight;
   final bool projected;
 }
 
-/// Simplified tick-weight ladder (R-TIME-1). The full spec has 13 tiers
-/// (down to sub-second and 5/30-minute/3/6/12-hour boundaries); this POC
-/// keeps the six tiers needed to demonstrate the "coarsest boundary wins"
-/// behaviour without the extra granularity.
-int timeWeight(DateTime previous, DateTime current) {
+/// Tick-weight ladder (R-TIME-1), following TradingView's tiers: the weight
+/// is the coarsest boundary crossed between [previous] and [current]. Intraday
+/// tiers (1/5/30 minutes, 1/3/6/12 hours) are read from the wall-clock fields,
+/// so they are unaffected by DST. Sub-second tiers are not modelled.
+TickMarkWeight timeWeight(DateTime previous, DateTime current) {
   if (current.year != previous.year) {
-    return 70;
+    return TickMarkWeight.year;
   }
   if (current.month != previous.month) {
-    return 60;
+    return TickMarkWeight.month;
   }
   if (current.day != previous.day) {
-    return 50;
+    return TickMarkWeight.day;
   }
   if (current.hour != previous.hour) {
-    return 30;
+    if (current.hour ~/ 12 != previous.hour ~/ 12) {
+      return TickMarkWeight.hour12;
+    }
+    if (current.hour ~/ 6 != previous.hour ~/ 6) {
+      return TickMarkWeight.hour6;
+    }
+    if (current.hour ~/ 3 != previous.hour ~/ 3) {
+      return TickMarkWeight.hour3;
+    }
+    return TickMarkWeight.hour1;
   }
   if (current.minute != previous.minute) {
-    return 20;
+    if (current.minute ~/ 30 != previous.minute ~/ 30) {
+      return TickMarkWeight.minute30;
+    }
+    if (current.minute ~/ 5 != previous.minute ~/ 5) {
+      return TickMarkWeight.minute5;
+    }
+    return TickMarkWeight.minute1;
   }
-  return 10;
+  return TickMarkWeight.second;
 }
 
 const _monthNames = [
@@ -55,19 +72,19 @@ const _monthNames = [
 
 /// Weight -> label (R-TIME-12/13): format is chosen by the mark's weight,
 /// not by zoom level.
-String defaultTimeLabel(DateTime t, int weight) {
-  if (weight >= 70) {
+String defaultTimeLabel(DateTime t, TickMarkWeight weight) {
+  if (weight >= TickMarkWeight.year) {
     return "${t.year}";
   }
-  if (weight >= 60) {
+  if (weight >= TickMarkWeight.month) {
     return _monthNames[t.month - 1];
   }
-  if (weight >= 50) {
+  if (weight >= TickMarkWeight.day) {
     return "${t.day}";
   }
   final hh = t.hour.toString().padLeft(2, "0");
   final mm = t.minute.toString().padLeft(2, "0");
-  if (weight >= 20) {
+  if (weight >= TickMarkWeight.minute1) {
     return "$hh:$mm";
   }
   final ss = t.second.toString().padLeft(2, "0");
@@ -91,8 +108,9 @@ List<TickMark> buildTickMarks({
   if (n == 0) {
     return const [];
   }
-  final weights = List<int>.filled(n, 0);
-  weights[0] = 70; // R-TIME-2: first datum opens with maximum context.
+  final weights = List<TickMarkWeight>.filled(n, TickMarkWeight.second);
+  weights[0] =
+      TickMarkWeight.year; // R-TIME-2: first datum opens with maximum context.
   for (var i = 1; i < n; i++) {
     weights[i] = timeWeight(times[i - 1], times[i]);
   }
@@ -232,64 +250,3 @@ DateTime projectTime(
   sampleSize: sampleSize,
   skipWeekends: skipWeekends,
 ).last;
-
-/// How many decimals value labels need so adjacent ticks read differently:
-/// enough to show the tick step exactly, and never fewer than two. Tiny
-/// ranges (1e-8) would otherwise all print as `0.00`.
-int valueDecimals(List<double> ticks) {
-  if (ticks.length < 2) {
-    return 2;
-  }
-  final step = (ticks[1] - ticks[0]).abs();
-  if (!step.isFinite || step == 0) {
-    return 2;
-  }
-  // The smallest number of decimals at which the step is a whole number of
-  // units in the last place (within rounding error). Relative, so a tiny step
-  // is not mistaken for zero.
-  bool whole(double scaled) {
-    final nearest = scaled.round();
-    return nearest != 0 && (scaled - nearest).abs() <= 1e-6 * nearest;
-  }
-
-  var decimals = 0;
-  var scaled = step;
-  while (decimals < 12 && !whole(scaled)) {
-    decimals++;
-    scaled *= 10;
-  }
-  return math.max(2, decimals);
-}
-
-/// "Nice" step value-axis ticks (R-AXIS-8: 1/2/2.5/5/10 progression).
-List<double> niceValueTicks(double min, double max, {int targetCount = 5}) {
-  final lo = min == max ? min - 1 : min;
-  final hi = min == max ? max + 1 : max;
-  final range = hi - lo;
-  final rawStep = range / targetCount;
-  final magnitude = math
-      .pow(10, (math.log(rawStep) / math.ln10).floor())
-      .toDouble();
-  final residual = rawStep / magnitude;
-  // 1/2/2.5/5/10 progression (R-AXIS-8): round the raw step up to the next.
-  double niceResidual;
-  if (residual > 5) {
-    niceResidual = 10;
-  } else if (residual > 2.5) {
-    niceResidual = 5;
-  } else if (residual > 2) {
-    niceResidual = 2.5;
-  } else if (residual > 1) {
-    niceResidual = 2;
-  } else {
-    niceResidual = 1;
-  }
-  final step = niceResidual * magnitude;
-  final start = (lo / step).ceil() * step;
-
-  final ticks = <double>[];
-  for (var v = start; v <= hi + step * 1e-6; v += step) {
-    ticks.add(v);
-  }
-  return ticks;
-}

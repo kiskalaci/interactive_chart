@@ -86,7 +86,8 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
 - **Sub-minute bars** (R-TIME-20/21, simplified). Modal-interval inference
   works in seconds (`inferModalIntervalSeconds`), so 10-second or 30-second
   series project their overscroll slots at the right cadence instead of at a
-  0-minute interval. Tick labels for weight-10 marks show `hh:mm:ss`.
+  0-minute interval. Tick labels for `TickMarkWeight.second` marks show
+  `hh:mm:ss`.
 - **Latest-point marker** — `LineLayer.latestPointBuilder` (`(BuildContext,
   T datum, int index) -> Widget`) draws a caller-supplied widget centred on
   the last datum, e.g. a pulsing "live" dot. It is built only while that
@@ -114,6 +115,14 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   changes, rounded up to a multiple of 16 so a continuous window resize does
   not rebuild them on every pixel.
 - **Axis gutters honour the text scale.**
+- **Tick weights are the `TickMarkWeight` enum** (exported), not integers,
+  and follow TradingView's ladder: `second` (10), `minute1` (20), `minute5`
+  (21), `minute30` (22), `hour1` (30), `hour3` (31), `hour6` (32), `hour12`
+  (33), `day` (50), `month` (60), `year` (70). Each member has a `double
+  value`, and the enum is comparable. `timeWeight` picks the coarsest tier
+  crossed from the wall-clock fields (so it is DST-safe), and
+  `TimeAxisConfig.formatter` receives a `TickMarkWeight`. Hour and minute
+  marks all use the `hh:mm` label; sub-minute marks use `hh:mm:ss`.
 - **Equal-weight time marks are tie-broken by index**, so labels are stable
   when data is appended or the zoom changes.
 - **The crosshair time badge shows the time of day** and can be formatted with
@@ -175,8 +184,8 @@ building all of §1–16 is a multi-milestone effort (see requirements.md §14):
   carried over from the previous frame's measured labels rather than a true
   dry-layout pass before the viewport is sized. Grow-only sizing (R-AXIS-5)
   is implemented.
-- **Tick-hierarchy simplifications**: 6 weight tiers instead of 13 (no
-  ISO-week, 12/6/3-hour, or 30/5-minute tiers); `minLabelSpacingPx` is a
+- **Tick-hierarchy simplifications**: 11 weight tiers instead of 13 (no
+  ISO-week tier and no sub-second tier); `minLabelSpacingPx` is a
   configured constant rather than measured against surviving labels
   (R-TIME-8); interval projection is calendar-day-accurate for
   daily-or-finer series and calendar-month-accurate for monthly-or-coarser
@@ -477,7 +486,7 @@ scale, never below 22 px). TC-AXIS-05 and 06 exercise `ValueAxisView` and
 | TC-AXIS-09 | ✅ Wheel on the value axis | Zooms y anchored at the pointer y; autoscale off | W | P0 |
 | TC-AXIS-10 | ✅ Vertical drag on the value axis | Zooms y; autoscale off | W | P1 |
 | TC-AXIS-11 | ✅ Double-tap on the value axis | Autoscale back on, extent recomputed | W | P0 |
-| TC-AXIS-12 | ✅ Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ 60) | Applied to the right marks | W | P1 |
+| TC-AXIS-12 | ✅ Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ `TickMarkWeight.month`) | Applied to the right marks | W | P1 |
 | TC-AXIS-14 | ✅ The largest visible weight is bold | Only the heaviest surviving marks are bold, at any tier | W | P1 |
 | TC-AXIS-13 | ✅ Text scale factor 2.0 (accessibility font size) | Labels and gutters grow; no overlap or overflow errors | W | P1 |
 
@@ -490,14 +499,19 @@ Labels could change when data was appended or the zoom changed, and the first
 datum could lose its label to an equal-weight neighbour (R-TIME-2). Ties now go
 to the earlier slot.
 
+With the finer intraday tiers, TC-PROJ-10 (appending a datum that matches the
+projection) exempts the final mark in the window: a 5-minute mark entering the
+window can displace the 1-minute mark at its edge (see R-TIME-30).
+
 | ID | Case | Expected | Lvl | Pri |
 |---|---|---|---|---|
-| TC-TIME-01 | ✅ `timeWeight` per tier: year, month, day, hour, minute, sub-minute | 70 / 60 / 50 / 30 / 20 / 10 | U | P0 |
-| TC-TIME-02 | ✅ First datum | Always weight 70 (R-TIME-2) | U | P0 |
+| TC-TIME-01 | ✅ `timeWeight` per tier: year, month, day, 12/6/3/1 hour, 30/5/1 minute, second | `TickMarkWeight` year / month / day / hour12 / hour6 / hour3 / hour1 / minute30 / minute5 / minute1 / second | U | P0 |
+| TC-TIME-02 | ✅ First datum | Always `TickMarkWeight.year` (R-TIME-2) | U | P0 |
 | TC-TIME-03 | ✅ Greedy selection | Higher weights win; no two accepted marks closer than `minLabelSpacingPx` (56 px) | U | P0 |
 | TC-TIME-04 | ✅ Pan at fixed zoom (R-TIME-9) | Mark set unchanged; marks only translate | W | P0 |
 | TC-TIME-05 | ✅ Sustained pinch (R-TIME-11) | Mark set changes only when the quantised slot-extent bucket changes (6 steps per doubling); no flicker between adjacent frames | W | P0 |
-| TC-TIME-06 | ✅ Labels by weight | Year → `2024`, month → `Mar`, day → `14`, hour/minute → `hh:mm`, sub-minute → `hh:mm:ss` | U | P0 |
+| TC-TIME-06 | ✅ Labels by weight | Year → `2024`, month → `Mar`, day → `14`, hour/minute tiers → `hh:mm`, second → `hh:mm:ss` | U | P0 |
+| TC-TIME-10 | ✅ `TickMarkWeight` ordering (`tick_mark_weight_test.dart`) | Values ascend second → year; `>`, `>=`, `<`, `<=` and `compareTo` follow the value | U | P1 |
 | TC-TIME-07 | ✅ Calendar edge cases: month end, year end, leap day, DST transitions in local time | Weights are correct on each boundary; no duplicated or missing label | U | P0 |
 | TC-TIME-08 | ✅ Mark set includes projected slots (R-TIME-24) | Scrolling into overscroll does not change the mark set | W | P0 |
 | TC-TIME-09 | ✅ Full zoom sweep from min to max slot extent on a daily series | At every bucket, labels never overlap and the coarsest boundary is labelled | W, G | P1 |

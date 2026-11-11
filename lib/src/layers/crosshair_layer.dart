@@ -1,7 +1,7 @@
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 /// Follows the highlighted slot and projects labelled badges onto the
 /// viewport edges (R-INT-1/2). `ctx.highlightedIndex` is the raw index —

@@ -1,6 +1,7 @@
 import "package:equatable/equatable.dart";
 import "package:flutter/widgets.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
+import "package:interactive_chart/src/time_axis/tick_mark_weight.dart";
 import "package:interactive_chart/src/time_axis/time_axis_placement.dart";
 
 /// R-AXIS-7/R-TIME-13. `null` at the call site means "no time axis".
@@ -20,15 +21,15 @@ class TimeAxisConfig extends Equatable {
   final TimeAxisPlacement placement;
 
   /// Builds the label text for a mark at [DateTime] `time` with the given
-  /// `weight` (the coarsest boundary it crosses: 70 year, 60 month, 50 day,
-  /// 30 hour, 20 minute, otherwise 10). When null, a default label for that
-  /// weight is used.
-  final String Function(DateTime time, int weight)? formatter;
+  /// `weight` (the coarsest boundary it crosses, see [TickMarkWeight]). When
+  /// null, a default label for that weight is used.
+  final String Function(DateTime time, TickMarkWeight weight)? formatter;
 
-  /// Style for ordinary marks, those with a weight below 60.
+  /// Style for ordinary marks, those with a weight below [TickMarkWeight.month].
   final TextStyle textStyle;
 
-  /// Style for marks with a weight of 60 or more (month and year boundaries).
+  /// Style for marks with a weight of [TickMarkWeight.month] or more (month
+  /// and year boundaries).
   /// The heaviest weight on screen is additionally set in bold.
   final TextStyle emphasizedTextStyle;
 
@@ -36,7 +37,7 @@ class TimeAxisConfig extends Equatable {
   /// value, so [formatter] cannot be reset to the default through this.
   TimeAxisConfig copyWith({
     TimeAxisPlacement? placement,
-    String Function(DateTime time, int weight)? formatter,
+    String Function(DateTime time, TickMarkWeight weight)? formatter,
     TextStyle? textStyle,
     TextStyle? emphasizedTextStyle,
   }) => TimeAxisConfig(
@@ -46,7 +47,7 @@ class TimeAxisConfig extends Equatable {
     emphasizedTextStyle: emphasizedTextStyle ?? this.emphasizedTextStyle,
   );
 
-  String format(DateTime t, int weight) =>
+  String format(DateTime t, TickMarkWeight weight) =>
       formatter?.call(t, weight) ?? defaultTimeLabel(t, weight);
 
   @override

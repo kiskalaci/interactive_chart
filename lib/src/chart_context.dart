@@ -2,7 +2,7 @@ import "dart:math" as math;
 
 import "package:flutter/foundation.dart";
 import "package:interactive_chart/src/chart_anchor.dart";
-import "package:interactive_chart/src/ticks.dart";
+import "package:interactive_chart/src/time_axis/time_ticks.dart";
 
 /// Shared render/interaction state for one `InteractiveChart`.
 ///

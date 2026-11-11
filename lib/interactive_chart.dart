@@ -1,5 +1,6 @@
 library;
 
+export "package:interactive_chart/src/time_axis/tick_mark_weight.dart";
 export "package:interactive_chart/src/time_axis/time_axis.dart";
 export "package:interactive_chart/src/time_axis/time_axis_config.dart";
 export "package:interactive_chart/src/time_axis/time_axis_placement.dart";
