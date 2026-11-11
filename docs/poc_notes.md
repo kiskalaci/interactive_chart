@@ -621,7 +621,8 @@ a vertical line at every visible time mark, which TC-GRID-01 covers.
 | TC-HIST-03 | ✅ `onTap` / `onHover` | As TC-CANDLE-06 | W | P1 |
 | TC-LINE-01 | ✅ Segments between consecutive finite points | One segment per pair; correct start, length and angle | W | P0 |
 | TC-LINE-02 | ✅ NaN in the middle of the series (R-DATA-8) | Line breaks; no segment across the gap | W | P0 |
-| TC-LINE-03 | ✅ `fill: true` | Fill strips under the line in a 15 % alpha of the line colour | G | P2 |
+| TC-LINE-03 | ✅ `fill: true` | A gradient under the line: strongest (`fillTopOpacity`, 0.4) at the highest point of the line in view, fading to `fillBottomOpacity` (0) at the bottom of the viewport; nothing above the line; checked on rendered pixels | W | P2 |
+| TC-LINE-03b | ✅ Fill opacities and gaps | `fillTopOpacity` / `fillBottomOpacity` set the two ends; a NaN gap leaves a gap in the shading; no fill by default | W | P2 |
 | TC-LINE-04 | ✅ Point hit targets | Built only when `onPointTap` or `onPointHover` is set; 12 px targets centred on points | W | P1 |
 | TC-LINE-05 | ✅ `latestPointBuilder` with the last datum visible | Builder called with the last datum and index; marker rendered (`test/latest_point_test.dart`) | W | P0 |
 | TC-LINE-06 | ✅ `latestPointBuilder` with the last datum scrolled out of view | Builder not called; no marker | W | P0 |

@@ -466,6 +466,7 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
                         _SeriesType.line => LineLayer<Candle>(
                           valueOf: (c) => c.close,
                           color: colors.blue,
+                          fill: true,
                           latestPointBuilder: (context, candle, index) =>
                               PulsingDot(color: colors.blue),
                         ),

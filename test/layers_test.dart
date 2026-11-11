@@ -5,6 +5,7 @@ import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
+import "package:flutter/rendering.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
@@ -19,6 +20,10 @@ const _histColor = Color(0xFF654321);
 const _lineColor = Color(0xFF0000EE);
 
 final _chartFinder = find.byType(InteractiveChart<int>);
+
+double _flat(int i) => 10;
+double _flatThenSpike(int i) => i < 30 ? 10 : 10.0 + (i - 29) * 5;
+double _flatWithGap(int i) => i >= 19 && i <= 21 ? double.nan : 10;
 
 Finder _boxes(Color color) => find.byWidgetPredicate(
   (w) => w is ColoredBox && w.color == color,
@@ -600,40 +605,119 @@ void main() {
       },
     );
 
-    testWidgets("TC-LINE-03 fill draws one 15% strip per visible point", (
-      tester,
-    ) async {
-      final h = await _pump(
-        tester,
+    // Alpha of the pixel at [at] (screen coordinates) of the rendered app.
+    Future<int> alphaAt(WidgetTester tester, Offset at) async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byType(RepaintBoundary).first,
+      );
+      final bytes = await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        final data = await image.toByteData();
+        final width = image.width;
+        image.dispose();
+        return (data!, width);
+      });
+      final (data, width) = bytes!;
+      final i = (at.dy.round() * width + at.dx.round()) * 4;
+      return data.getUint8(i + 3);
+    }
+
+    testWidgets("TC-LINE-03 fill shades under the line, strongest at the top "
+        "and transparent at the bottom", (tester) async {
+      useLargeSurface(tester);
+      final h = _bare(
         () => [
-          LineLayer<int>(
-            valueOf: (i) => 10.0 + i,
+          const LineLayer<int>(
+            valueOf: _flatThenSpike,
             color: _lineColor,
             fill: true,
           ),
         ],
-        count: 12,
         slotExtent: 20,
       );
-      final fillColor = _lineColor.withValues(alpha: 0.15);
-      final strips = _boxes(fillColor);
-      expect(strips, findsNWidgets(12));
-      // Each strip runs from the line down to the bottom of the viewport.
+      await tester.pumpWidget(h.app(intSeries(0, 40), width: 800, height: 400));
+      await tester.pumpAndSettle();
+      expect(find.byKey(LineLayer.fillKey), findsOneWidget);
+
       final origin = tester.getTopLeft(_chartFinder);
-      for (var i = 0; i < 12; i++) {
-        final r = tester.getRect(strips.at(i));
-        expect(r.top - origin.dy, closeTo(h.ctx.yOf(10.0 + i), 1e-6));
-        expect(r.bottom - origin.dy, closeTo(h.ctx.viewportHeight, 1e-6));
-      }
+      // Under the flat stretch (x = slot 5), in the shaded polygon.
+      final x = origin.dx + h.ctx.xOf(5);
+      final lineY = origin.dy + h.ctx.yOf(10);
+      final top = h.ctx.yOf(_flatThenSpike(30)) + origin.dy;
+      final bottom = origin.dy + h.ctx.viewportHeight;
+
+      final nearLine = await alphaAt(tester, Offset(x, lineY + 4));
+      final middle = await alphaAt(tester, Offset(x, (lineY + bottom) / 2));
+      final nearBottom = await alphaAt(tester, Offset(x, bottom - 2));
+      expect(nearLine, greaterThan(0));
+      expect(nearLine, greaterThan(middle));
+      expect(middle, greaterThan(nearBottom));
+      expect(nearBottom, lessThan(12));
+      // Above the line there is nothing.
+      expect(await alphaAt(tester, Offset(x, lineY - 6)), 0);
+      // The gradient starts at the highest point of the line (the spike), so
+      // the flat stretch below it is already partly faded.
+      expect(top, lessThan(lineY));
     });
 
-    testWidgets("no fill strips by default", (tester) async {
+    testWidgets("fillTopOpacity and fillBottomOpacity set the gradient ends", (
+      tester,
+    ) async {
+      useLargeSurface(tester);
+      final h = _bare(
+        () => [
+          const LineLayer<int>(
+            valueOf: _flat,
+            color: _lineColor,
+            fill: true,
+            fillTopOpacity: 1,
+            fillBottomOpacity: 1,
+          ),
+        ],
+      );
+      await tester.pumpWidget(h.app(intSeries(0, 40), width: 800, height: 400));
+      await tester.pumpAndSettle();
+      final origin = tester.getTopLeft(_chartFinder);
+      final x = origin.dx + h.ctx.xOf(5);
+      final lineY = origin.dy + h.ctx.yOf(10);
+      // Fully opaque top to bottom.
+      expect(await alphaAt(tester, Offset(x, lineY + 6)), 255);
+      expect(
+        await alphaAt(tester, Offset(x, origin.dy + h.ctx.viewportHeight - 3)),
+        255,
+      );
+    });
+
+    testWidgets("a gap in the data leaves a gap in the fill", (tester) async {
+      useLargeSurface(tester);
+      final h = _bare(
+        () => [
+          const LineLayer<int>(
+            valueOf: _flatWithGap,
+            color: _lineColor,
+            fill: true,
+            fillTopOpacity: 1,
+            fillBottomOpacity: 1,
+          ),
+        ],
+        slotExtent: 20,
+      );
+      await tester.pumpWidget(h.app(intSeries(0, 40), width: 800, height: 400));
+      await tester.pumpAndSettle();
+      final origin = tester.getTopLeft(_chartFinder);
+      final y = origin.dy + h.ctx.viewportHeight - 10;
+      // Shaded under slot 5, nothing under the NaN at slots 19-21.
+      expect(await alphaAt(tester, Offset(origin.dx + h.ctx.xOf(5), y)), 255);
+      expect(await alphaAt(tester, Offset(origin.dx + h.ctx.xOf(20), y)), 0);
+    });
+
+    testWidgets("no fill by default", (tester) async {
       await _pump(
         tester,
         () => [LineLayer<int>(valueOf: (i) => 10.0 + i, color: _lineColor)],
         count: 12,
       );
-      expect(_boxes(_lineColor.withValues(alpha: 0.15)), findsNothing);
+      expect(find.byKey(LineLayer.fillKey), findsNothing);
     });
 
     group("TC-LINE-04 point hit targets", () {
