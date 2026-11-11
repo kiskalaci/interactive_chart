@@ -10,6 +10,12 @@ import "package:interactive_chart/src/time_axis/time_ticks.dart";
 /// timestamps only. Anything datum-shaped (accessors, extents) is computed
 /// by the widget/layers and pushed in via the setters below, mirroring the
 /// requirements' separation between the context (§5) and layers (§8).
+///
+/// Listeners of the context itself hear about every change. Two narrower
+/// listenables split them by kind, so a change only rebuilds what reads it:
+/// [viewChanges] for scroll, zoom and the value extent, and
+/// [highlightChanges] for the crosshair's slot. Moving the crosshair then
+/// rebuilds the crosshair alone, not every candle on screen.
 class InteractiveChartContext extends ChangeNotifier {
   InteractiveChartContext({
     this.initialAnchor = ChartAnchor.right,
@@ -20,6 +26,23 @@ class InteractiveChartContext extends ChangeNotifier {
 
   ChartAnchor initialAnchor;
   final double minSlotExtent;
+
+  final _view = _Signal();
+  final _highlight = _Signal();
+
+  /// Notifies when the view changes: scroll, zoom, the value extent or
+  /// autoscale. Never for a highlight change.
+  Listenable get viewChanges => _view;
+
+  /// Notifies when [highlightedIndex] or [highlightedProjectedTime] changes,
+  /// and for nothing else.
+  Listenable get highlightChanges => _highlight;
+
+  void _notifyView() {
+    _view.fire();
+    notifyListeners();
+  }
+
   final double maxSlotExtent;
 
   bool _initialAnchorApplied = false;
@@ -143,7 +166,7 @@ class InteractiveChartContext extends ChangeNotifier {
     _scrollOffset = newScrollOffset;
     _clampScroll();
     _recomputeVisibleRange();
-    notifyListeners();
+    _notifyView();
   }
 
   void panBy(double deltaContentPx) {
@@ -151,7 +174,7 @@ class InteractiveChartContext extends ChangeNotifier {
     _scrollOffset += deltaContentPx;
     _clampScroll();
     _recomputeVisibleRange();
-    notifyListeners();
+    _notifyView();
   }
 
   /// Pans the value extent by a screen-space pixel delta, switching out of
@@ -169,7 +192,7 @@ class InteractiveChartContext extends ChangeNotifier {
     autoscale = false;
     valueMin += deltaValue;
     valueMax += deltaValue;
-    notifyListeners();
+    _notifyView();
   }
 
   void jumpTo(double offset) {
@@ -177,7 +200,7 @@ class InteractiveChartContext extends ChangeNotifier {
     _scrollOffset = offset;
     _clampScroll();
     _recomputeVisibleRange();
-    notifyListeners();
+    _notifyView();
   }
 
   // ignore: avoid_positional_boolean_parameters
@@ -188,6 +211,7 @@ class InteractiveChartContext extends ChangeNotifier {
     }
     highlightedIndex = index;
     highlightedProjectedTime = projectedTime;
+    _highlight.fire();
     notifyListeners();
   }
 
@@ -198,7 +222,7 @@ class InteractiveChartContext extends ChangeNotifier {
       return;
     }
     autoscale = value;
-    notifyListeners();
+    _notifyView();
   }
 
   void setValueExtent(double min, double max) {
@@ -214,12 +238,12 @@ class InteractiveChartContext extends ChangeNotifier {
     autoscale = false;
     valueMin = anchorValue - (anchorValue - valueMin) * factor;
     valueMax = anchorValue + (valueMax - anchorValue) * factor;
-    notifyListeners();
+    _notifyView();
   }
 
   /// Lets the owning widget announce state that changed outside of a
   /// gesture (e.g. the very first layout) to controller/callback listeners.
-  void announce() => notifyListeners();
+  void announce() => _notifyView();
 
   /// The single `xOf` every layer must use (R-SCALE-2) — index to viewport
   /// pixel, centred on the slot. Time always runs left-to-right; only the
@@ -271,4 +295,16 @@ class InteractiveChartContext extends ChangeNotifier {
     visibleStart = first.clamp(0, math.max(0, slotCount - 1));
     visibleEnd = end.clamp(visibleStart, slotCount);
   }
+
+  @override
+  void dispose() {
+    _view.dispose();
+    _highlight.dispose();
+    super.dispose();
+  }
+}
+
+/// A [ChangeNotifier] that can be fired from outside.
+class _Signal extends ChangeNotifier {
+  void fire() => notifyListeners();
 }

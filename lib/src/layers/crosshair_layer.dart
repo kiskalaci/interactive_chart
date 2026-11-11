@@ -27,6 +27,9 @@ class CrosshairLayer<T> extends ChartLayer<T> {
   final Color labelBackground;
 
   @override
+  bool get dependsOnHighlight => true;
+
+  @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
     final index = ctx.highlightedIndex;
     if (index == null) {

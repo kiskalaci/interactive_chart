@@ -97,6 +97,15 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   rebuild of the chart marks autoscale dirty, so a live tick that moves the
   last bar's high or low outside the current extent rescales immediately
   (R-SCALE-10). Pans and zooms that don't change the data don't trigger it.
+- **Crosshair moves rebuild only the crosshair** (R-PERF-4). The context
+  splits its notifications: `viewChanges` (scroll, zoom, value extent,
+  autoscale) rebuilds the chart and every layer, while `highlightChanges`
+  rebuilds only layers whose `ChartLayer.dependsOnHighlight` is true
+  (`CrosshairLayer`). Each layer paints inside its own `RepaintBoundary`, so
+  the crosshair repainting does not repaint the candles under it. A custom
+  layer that draws something for the highlighted slot must override
+  `dependsOnHighlight`. Hovering a projected slot reads only the newest
+  bars' times, so its cost does not grow with the data length.
 - **Visible range is exact.** `[visibleStart, visibleEnd)` holds precisely the
   slots that overlap the viewport; a slot starting on the right edge is not
   counted.
@@ -214,8 +223,8 @@ building all of §1–16 is a multi-milestone effort (see requirements.md §14):
   prepend compensation above (R-PAGE-12).
 - **No render-object tree (R-PERF-1, R-LAYOUT-2)**. Each layer builds a
   `Widget` tree (child-managed style, R-LAYER-1) rather than a `CustomPainter`,
-  and the whole widget calls `setState` on every context change
-  (pan/zoom/highlight) rather than driving `markNeedsLayout`/`markNeedsPaint`
+  and the whole widget calls `setState` on every view change
+  (pan/zoom/value extent) rather than driving `markNeedsLayout`/`markNeedsPaint`
   directly on render objects. This trades away the painting-layer style's
   perf headroom in exchange for per-item interactivity (`onTap`/`onHover` on
   candles, histogram bars, and line points) and real widget composition —
@@ -810,7 +819,7 @@ ticker is left running (the test framework fails on any left pending).
 | TC-PERF-01 | R-PERF-3 budget: 60 visible candles, 3 lines, grid, crosshair, 50k data loaded, on a 2020-class mobile device | ≤ 8 ms per frame for build + layout + paint during pan. Expect this to fail with the widget-per-slot design; the result decides whether to move to render objects | P | P0 |
 | TC-PERF-02 | Per-frame work during pan with 1k vs 50k items | Frame time independent of data length (R-PERF-2) | P | P0 |
 | TC-PERF-03 | Zoomed fully out (slot extent 1 px) on a wide desktop viewport | Frame time recorded; worst case documented | P | P1 |
-| TC-PERF-04 | Crosshair movement | Measures whether candles rebuild on hover (R-PERF-4). Expected to rebuild today | P | P1 |
+| TC-PERF-04 | ✅ Crosshair movement | Hover and tap rebuild and repaint only the layers whose `dependsOnHighlight` is true (the crosshair); the others are neither rebuilt nor repainted (R-PERF-4). Covered by `test/rebuild_scope_test.dart` | W | P1 |
 | TC-PERF-05 | Live feed at 1 tick/s with 10k items | Frame time per tick within budget; time-tick rebuild cost recorded | P | P1 |
 
 ### 16. Visual regression (goldens, R-TEST-5)

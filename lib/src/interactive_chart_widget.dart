@@ -188,6 +188,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     ctx
       ..setSlotCount(widget.data.length)
       ..addListener(_onContextChanged);
+    ctx.viewChanges.addListener(_onViewChanged);
     _attachController();
     // Prevents the browser's native "swipe to navigate back/forward" for
     // horizontal trackpad scroll while the pointer is over the chart —
@@ -264,6 +265,12 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     widget.onIndexHighlighted?.call(
       ctx.highlightedProjectedTime == null ? ctx.highlightedIndex : null,
     );
+  }
+
+  /// Scroll, zoom or the value extent changed: the axes and every layer must
+  /// be rebuilt. A highlight change does not come through here; only the
+  /// layers that depend on it rebuild (see [_buildLayer]).
+  void _onViewChanged() {
     // POC simplification of R-PERF-1/R-LAYOUT-2: a real implementation keeps
     // this to render-object markNeedsPaint and never rebuilds the widget
     // tree. Rebuilding here is simple and correct but costs more than
@@ -278,6 +285,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     _longPressTimer?.cancel();
     widget.controller?.detach(ctx);
     ctx.removeListener(_onContextChanged);
+    ctx.viewChanges.removeListener(_onViewChanged);
     _ownedController?.dispose();
     ctx.dispose();
     _scrollGuard.dispose();
@@ -620,11 +628,26 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     if (index < widget.data.length) {
       ctx.setHighlighted(index);
     } else {
-      final realTimes = [for (final d in widget.data) widget.timeOf(d)];
-      final projected = projectTimes(realTimes, index - widget.data.length + 1);
+      final projected = projectTimes(
+        _tailTimes(),
+        index - widget.data.length + 1,
+      );
       ctx.setHighlighted(index, projectedTime: projected.last);
     }
   }
+
+  /// The times of the newest data, as many as [projectTimes] reads to infer
+  /// the cadence. Mapping the whole series on every hover move would make the
+  /// crosshair cost grow with the data length.
+  List<DateTime> _tailTimes() {
+    final data = widget.data;
+    final from = math.max(0, data.length - _projectionSampleSize - 1);
+    return [for (var i = from; i < data.length; i++) widget.timeOf(data[i])];
+  }
+
+  /// How many intervals [projectTimes] samples to infer the cadence (its
+  /// default `sampleSize`).
+  static const _projectionSampleSize = 100;
 
   void _clearHighlight() => ctx.setHighlighted(null);
 
@@ -838,12 +861,24 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     },
   );
 
+  /// One layer in its own repaint boundary, so repainting one (the
+  /// crosshair, say) does not repaint the others. A layer that reads the
+  /// highlight is rebuilt on its own whenever the highlight changes.
+  Widget _buildLayer(ChartLayer<T> layer, Size size) => RepaintBoundary(
+    child: layer.dependsOnHighlight
+        ? ListenableBuilder(
+            listenable: ctx.highlightChanges,
+            builder: (context, _) => layer.build(size, ctx, widget.data),
+          )
+        : layer.build(size, ctx, widget.data),
+  );
+
   Widget _buildLayers(double width, double height) {
     final size = Size(width, height);
     Widget stack = Stack(
       children: [
         for (final layer in widget.layers)
-          Positioned.fill(child: layer.build(size, ctx, widget.data)),
+          Positioned.fill(child: _buildLayer(layer, size)),
       ],
     );
 

@@ -14,6 +14,17 @@ abstract class ChartLayer<T> {
 
   Widget build(Size size, InteractiveChartContext ctx, List<T> data);
 
+  /// Whether [build] reads the highlighted slot
+  /// (`ctx.highlightedIndex` or `ctx.highlightedProjectedTime`).
+  ///
+  /// The chart rebuilds its layers when the view or the data changes, but a
+  /// highlight change (the crosshair moving) rebuilds only the layers that
+  /// return true here. Each layer also paints in its own repaint boundary, so
+  /// the others are not repainted either. Defaults to false; a layer that
+  /// draws something for the highlighted slot must override it, or it will
+  /// not follow the crosshair.
+  bool get dependsOnHighlight => false;
+
   /// Optional content painted on top of the value-axis gutter, e.g. a price
   /// tag. [size] is the gutter's own size (its width by the viewport's
   /// height), and `ctx.yOf` maps a value to a y inside it, because the gutter
