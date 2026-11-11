@@ -9,6 +9,8 @@ import "package:flutter/rendering.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
+import "package:interactive_chart/src/painting/item_hit_region.dart";
+import "package:interactive_chart/src/painting/shape_painters.dart";
 
 import "support/chart_harness.dart";
 import "support/variants.dart";
@@ -29,6 +31,47 @@ Finder _boxes(Color color) => find.byWidgetPredicate(
   (w) => w is ColoredBox && w.color == color,
   description: "ColoredBox $color",
 );
+
+/// The painted candles, in viewport coordinates (empty if none are painted).
+List<CandleShape> _candles(WidgetTester tester) => [
+  for (final w in tester.widgetList<CustomPaint>(find.byType(CustomPaint)))
+    if (w.painter case final CandlePainter p) ...p.candles,
+];
+
+/// The painted histogram bars, in viewport coordinates.
+List<Rect> _bars(WidgetTester tester) => [
+  for (final w in tester.widgetList<CustomPaint>(find.byType(CustomPaint)))
+    if (w.painter case final BarPainter p) ...p.bars,
+];
+
+/// The colour of the pixel at [at] (logical screen coordinates) of the
+/// rendered app.
+Future<Color> _colorAt(WidgetTester tester, Offset at) async {
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byType(RepaintBoundary).first,
+  );
+  final bytes = await tester.runAsync(() async {
+    final image = await boundary.toImage();
+    final data = await image.toByteData();
+    final width = image.width;
+    image.dispose();
+    return (data!, width);
+  });
+  final (data, width) = bytes!;
+  final i = (at.dy.floor() * width + at.dx.floor()) * 4;
+  return Color.fromARGB(
+    data.getUint8(i + 3),
+    data.getUint8(i),
+    data.getUint8(i + 1),
+    data.getUint8(i + 2),
+  );
+}
+
+/// Every element under the chart, a measure of how much it builds.
+int _elementCount() => find
+    .descendant(of: _chartFinder, matching: find.byWidgetPredicate((_) => true))
+    .evaluate()
+    .length;
 
 /// No axes, so the viewport equals the widget and layer coordinates equal
 /// global coordinates minus the widget's top-left corner.
@@ -143,8 +186,8 @@ void main() {
             ],
             count: n,
           );
-          return _boxes(_up).evaluate().length +
-              _boxes(_histColor).evaluate().length +
+          return _candles(tester).length +
+              _bars(tester).length +
               _boxes(_lineColor).evaluate().length;
         }
 
@@ -153,6 +196,39 @@ void main() {
         expect(small, greaterThan(50));
         // Equal up to the slots that straddle the viewport edges.
         expect((large - small).abs(), lessThanOrEqualTo(6));
+      },
+    );
+
+    testWidgetsOnce(
+      "TC-LAYER-02b candles and bars build the same widgets for 25 or 400 "
+      "visible slots",
+      (tester) async {
+        Future<int> elements(double slotExtent) async {
+          await tester.pumpWidget(const SizedBox());
+          await _pump(
+            tester,
+            () => [
+              CandleLayer<int>(
+                openOf: (i) => 10,
+                highOf: (i) => 12,
+                lowOf: (i) => 8,
+                closeOf: (i) => 11.0 + i % 2,
+                onTap: (_) {},
+                onHover: (_) {},
+              ),
+              HistogramLayer<int>(valueOf: (i) => 5.0 + i % 3, onTap: (_) {}),
+            ],
+            count: 2000,
+            slotExtent: slotExtent,
+          );
+          expect(_candles(tester), isNotEmpty);
+          return _elementCount();
+        }
+
+        final few = await elements(32);
+        final many = await elements(2);
+        expect(_candles(tester).length, greaterThan(350));
+        expect(many, few);
       },
     );
 
@@ -293,9 +369,8 @@ void main() {
         () => [candles(open: (i) => opens[i], close: (i) => closes[i])],
         count: 3,
       );
-      // Each candle is a wick plus a body, both in the candle's colour.
-      expect(_boxes(_up).evaluate().length, 4);
-      expect(_boxes(_down).evaluate().length, 2);
+      expect([for (final c in _candles(tester)) c.up], [true, false, true]);
+      expect([for (final c in _candles(tester)) c.index], [0, 1, 2]);
     });
 
     testWidgets("TC-CANDLE-02 body width and minimum body height", (
@@ -307,10 +382,7 @@ void main() {
         count: 5,
         slotExtent: 20,
       );
-      final bodies = [
-        for (var i = 0; i < _boxes(_up).evaluate().length; i++)
-          tester.getRect(_boxes(_up).at(i)),
-      ].where((r) => r.width > 1).toList();
+      final bodies = [for (final c in _candles(tester)) c.body];
       expect(bodies.length, 5);
       for (final r in bodies) {
         expect(r.width, closeTo(14, 1e-6)); // 20 * 0.7
@@ -335,10 +407,7 @@ void main() {
         count: 4,
         slotExtent: 12,
       );
-      final bodies = [
-        for (var i = 0; i < _boxes(_up).evaluate().length; i++)
-          tester.getRect(_boxes(_up).at(i)),
-      ].where((r) => r.width > 1).toList();
+      final bodies = [for (final c in _candles(tester)) c.body];
       expect(bodies, isNotEmpty);
       for (final r in bodies) {
         expect(r.width, closeTo(6, 1e-6));
@@ -355,8 +424,7 @@ void main() {
         slotExtent: 1.5,
       );
       final rects = [
-        for (var i = 0; i < _boxes(_up).evaluate().length; i++)
-          tester.getRect(_boxes(_up).at(i)),
+        for (final c in _candles(tester)) ...[c.wick, c.body],
       ];
       expect(rects, isNotEmpty);
       for (final r in rects) {
@@ -378,15 +446,16 @@ void main() {
         count: 3,
         slotExtent: 20,
       );
-      final origin = tester.getTopLeft(_chartFinder);
-      final wicks = [
-        for (var i = 0; i < _boxes(_up).evaluate().length; i++)
-          tester.getRect(_boxes(_up).at(i)),
-      ].where((r) => r.width == 1);
-      expect(wicks.length, 3);
-      for (final w in wicks) {
-        expect(w.top - origin.dy, closeTo(h.ctx.yOf(20), 1e-6));
-        expect(w.bottom - origin.dy, closeTo(h.ctx.yOf(4), 1e-6));
+      final shapes = _candles(tester);
+      expect(shapes.length, 3);
+      for (final c in shapes) {
+        expect(c.wick.width, 1);
+        expect(c.wick.center.dx, closeTo(h.ctx.xOf(c.index), 1e-6));
+        expect(c.wick.top, closeTo(h.ctx.yOf(20), 1e-6));
+        expect(c.wick.bottom, closeTo(h.ctx.yOf(4), 1e-6));
+        expect(c.body.top, closeTo(h.ctx.yOf(12), 1e-6));
+        expect(c.body.bottom, closeTo(h.ctx.yOf(10), 1e-6));
+        expect(c.body.center.dx, closeTo(h.ctx.xOf(c.index), 1e-6));
       }
     });
 
@@ -406,7 +475,7 @@ void main() {
         count: 10,
       );
       expect(tester.takeException(), isNull);
-      expect(_boxes(_up).evaluate().length, 2 * 6); // 10 - 4 skipped
+      expect([for (final c in _candles(tester)) c.index], [0, 1, 6, 7, 8, 9]);
     });
 
     testWidgets("TC-CANDLE-06 tap reports the index; hover enter and exit", (
@@ -444,6 +513,93 @@ void main() {
       );
       await tester.pump();
       expect(hovers.last, isNull);
+    });
+
+    testWidgets("TC-CANDLE-07 bodies and wicks are painted in their colours", (
+      tester,
+    ) async {
+      // 0: up, 1: down; tall bodies, long wicks.
+      final h = await _pump(
+        tester,
+        () => [
+          candles(
+            open: (i) => i.isEven ? 10 : 30,
+            close: (i) => i.isEven ? 30 : 10,
+            high: (i) => 40,
+            low: (i) => 0,
+          ),
+        ],
+        count: 2,
+        // Slot centres on .5, so each 1 px wick covers exactly one pixel.
+        slotExtent: 41,
+      );
+      final origin = tester.getTopLeft(_chartFinder);
+      Offset at(int i, double value, {double dx = 0}) =>
+          origin + Offset(h.ctx.xOf(i) + dx, h.ctx.yOf(value));
+      expect(await _colorAt(tester, at(0, 20, dx: 8)), _up); // body
+      expect(await _colorAt(tester, at(1, 20, dx: 8)), _down);
+      expect(await _colorAt(tester, at(0, 36)), _up); // wick
+      expect(await _colorAt(tester, at(1, 3)), _down);
+      // Beside the wick, above the body: nothing.
+      expect((await _colorAt(tester, at(0, 36, dx: 8))).a, 0);
+    });
+
+    testWidgets("TC-CANDLE-08 a still mouse follows the candles under it", (
+      tester,
+    ) async {
+      final hovers = <int?>[];
+      final h = await _pump(
+        tester,
+        () => [candles(open: (i) => 10, close: (i) => 12, onHover: hovers.add)],
+        count: 100,
+        slotExtent: 20,
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: _slotPoint(tester, h, 5));
+      await tester.pump();
+      expect(hovers, [5]);
+      // The chart scrolls two slots under the mouse.
+      h.ctx.panBy(40);
+      await tester.pump();
+      await tester.pump();
+      expect(hovers, [5, null, 7]);
+      await mouse.removePointer();
+      await tester.pump();
+      expect(hovers.last, isNull);
+    });
+
+    testWidgets("TC-CANDLE-09 pointers off a candle reach the layer below", (
+      tester,
+    ) async {
+      final log = <String>[];
+      final taps = <int>[];
+      final h = await _pump(
+        tester,
+        () => [
+          _TapLayer("below", log),
+          // Slot 3 is a gap: no candle there.
+          candles(
+            open: (i) => i == 3 ? double.nan : 10,
+            close: (i) => 12,
+            onTap: taps.add,
+          ),
+        ],
+        count: 10,
+        slotExtent: 30,
+      );
+      await tester.tapAt(_slotPoint(tester, h, 2));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, [2]);
+      expect(log, isEmpty);
+      await tester.tapAt(_slotPoint(tester, h, 3));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, [2]);
+      expect(log, ["below"]);
+      // Past the last candle.
+      await tester.tapAt(_slotPoint(tester, h, 10));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, [2]);
+      expect(log, ["below", "below"]);
     });
 
     testWidgets("candles without callbacks do not swallow gestures", (
@@ -485,10 +641,7 @@ void main() {
         count: 40,
       );
       final strip = h.ctx.viewportHeight * 0.25;
-      final heights = [
-        for (var i = 0; i < _boxes(_histColor).evaluate().length; i++)
-          tester.getRect(_boxes(_histColor).at(i)).height,
-      ].where((v) => v > 1.5).toList()..sort();
+      final heights = [for (final r in _bars(tester)) r.height]..sort();
       expect(heights.last, closeTo(strip, 1e-6));
       // 8 : 4 : 2 : 1 are in proportion.
       expect(heights.toSet().length, 4);
@@ -505,10 +658,7 @@ void main() {
         count: 600,
       );
       final strip = h.ctx.viewportHeight * 0.25;
-      final top = [
-        for (var i = 0; i < _boxes(_histColor).evaluate().length; i++)
-          tester.getRect(_boxes(_histColor).at(i)).height,
-      ].where((v) => v > 1.5).reduce(math.max);
+      final top = [for (final r in _bars(tester)) r.height].reduce(math.max);
       expect(top, closeTo(strip, 1e-6));
     });
 
@@ -516,10 +666,12 @@ void main() {
       tester,
     ) async {
       await _pump(tester, () => [hist((i) => i.isEven ? double.nan : 0)]);
+      expect(_bars(tester), isEmpty);
       expect(_boxes(_histColor), findsNothing);
       await tester.pumpWidget(const SizedBox());
       await _pump(tester, () => [hist((i) => -5)]);
       expect(tester.takeException(), isNull);
+      expect(_bars(tester), isEmpty);
       expect(_boxes(_histColor), findsNothing);
     });
 
@@ -528,12 +680,27 @@ void main() {
     ) async {
       await _pump(tester, () => [hist((i) => i == 3 ? -5 : 10)], count: 10);
       expect(tester.takeException(), isNull);
-      // 9 positive bars plus the baseline.
-      final tall = [
-        for (var i = 0; i < _boxes(_histColor).evaluate().length; i++)
-          tester.getRect(_boxes(_histColor).at(i)).height,
-      ].where((v) => v > 1.5);
-      expect(tall.length, 9);
+      // The 9 positive bars; a bar of zero or less is not drawn.
+      expect(_bars(tester).length, 9);
+      expect(_bars(tester).every((r) => r.height > 0), isTrue);
+    });
+
+    testWidgets("TC-HIST-01c bars sit on the bottom edge, centred on slots, "
+        "and are painted", (tester) async {
+      final h = await _pump(tester, () => [hist((i) => 10)], count: 12);
+      final origin = tester.getTopLeft(_chartFinder);
+      final bars = _bars(tester);
+      expect(bars.length, 12);
+      for (var i = 0; i < bars.length; i++) {
+        expect(bars[i].center.dx, closeTo(h.ctx.xOf(i), 1e-9));
+        expect(bars[i].bottom, closeTo(h.ctx.viewportHeight, 1e-9));
+        expect(bars[i].width, closeTo(8 * 0.7, 1e-9));
+      }
+      final color = await _colorAt(
+        tester,
+        origin + Offset(h.ctx.xOf(4), h.ctx.viewportHeight - 5),
+      );
+      expect(color, _histColor);
     });
 
     testWidgets("TC-HIST-03 tap reports the index; hover enter and exit", (
@@ -564,6 +731,18 @@ void main() {
       await mouse.moveTo(bar(2));
       await tester.pump();
       expect(hovers, [1, null, 2]);
+
+      // Between two bars, and above a bar: no bar there.
+      await mouse.moveTo(bar(2) + const Offset(9, 0));
+      await tester.pump();
+      expect(hovers, [1, null, 2, null]);
+      await tester.tapAt(bar(5) + const Offset(9, 0));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(
+        origin + Offset(h.ctx.xOf(5), h.ctx.viewportHeight * 0.4),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(taps, [5]);
     });
   });
 
@@ -721,16 +900,6 @@ void main() {
     });
 
     group("TC-LINE-04 point hit targets", () {
-      Finder targets() => find.byWidgetPredicate(
-        (w) => w is MouseRegion,
-        description: "MouseRegion",
-      );
-
-      int hitTargets(WidgetTester tester) => [
-        for (var i = 0; i < tester.widgetList(targets()).length; i++)
-          tester.getSize(targets().at(i)),
-      ].where((s) => s == const Size(12, 12)).length;
-
       testWidgets("none without callbacks", (tester) async {
         await _pump(
           tester,
@@ -738,7 +907,7 @@ void main() {
           count: 15,
           slotExtent: 20,
         );
-        expect(hitTargets(tester), 0);
+        expect(find.byType(ItemHitRegion), findsNothing);
       });
 
       testWidgets(
@@ -758,7 +927,7 @@ void main() {
             count: 15,
             slotExtent: 20,
           );
-          expect(hitTargets(tester), 15);
+          expect(find.byType(ItemHitRegion), findsOneWidget);
 
           final origin = tester.getTopLeft(_chartFinder);
           Offset point(int i) =>
@@ -775,8 +944,50 @@ void main() {
           await mouse.moveTo(point(4));
           await tester.pump();
           expect(hovers, [3, null, 4]);
+
+          // Each point answers to a 12 px square: 5.9 px off still hits,
+          // 6 px (the square's open right and bottom edges) does not.
+          await tester.tapAt(point(9) + const Offset(-5.9, -5.9));
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.tapAt(point(9) + const Offset(6, 0));
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.tapAt(point(9) + const Offset(0, 6));
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(taps, [7, 9]);
         },
       );
+
+      testWidgets("where squares overlap the later point wins", (tester) async {
+        final taps = <int>[];
+        final h = await _pump(
+          tester,
+          () => [LineLayer<int>(valueOf: _flat, onPointTap: taps.add)],
+        );
+        final origin = tester.getTopLeft(_chartFinder);
+        // 3 px right of point 4 is inside both 4's and 5's squares.
+        await tester.tapAt(origin + Offset(h.ctx.xOf(4) + 3, h.ctx.yOf(10)));
+        await tester.pump(const Duration(milliseconds: 400));
+        // 3 px left of point 4: inside 3's and 4's.
+        await tester.tapAt(origin + Offset(h.ctx.xOf(4) - 3, h.ctx.yOf(10)));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(taps, [5, 4]);
+      });
+
+      testWidgets("a NaN point has no target", (tester) async {
+        final taps = <int>[];
+        final h = await _pump(
+          tester,
+          () => [LineLayer<int>(valueOf: _flatWithGap, onPointTap: taps.add)],
+          count: 40,
+          slotExtent: 12,
+        );
+        final origin = tester.getTopLeft(_chartFinder);
+        await tester.tapAt(origin + Offset(h.ctx.xOf(20), h.ctx.yOf(10)));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.tapAt(origin + Offset(h.ctx.xOf(18), h.ctx.yOf(10)));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(taps, [18]);
+      });
     });
   });
 

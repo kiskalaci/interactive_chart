@@ -4,6 +4,7 @@ import "dart:ui" as ui;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/item_hit_region.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// R-LAYER-5 (subset): solid stroke, optional fill, gap handling per
@@ -11,8 +12,9 @@ import "package:interactive_chart/src/typedefs/value_range.dart";
 ///
 /// The stroke is built from rotated 1px-tall [ColoredBox] segments (one real
 /// widget per gap-free pair of consecutive points) rather than a single
-/// canvas [Path], and each vertex gets a small invisible hit target so
-/// [onPointTap]/[onPointHover] can report which datum is under the pointer.
+/// canvas [Path]. With [onPointTap] or [onPointHover], one hit region over the
+/// layer reports the point under the pointer: each point answers to a
+/// [pointHitSize] square around it.
 ///
 /// With [fill], the area under the line is shaded with a vertical gradient:
 /// strongest ([fillTopOpacity]) at the highest point of the line in view,
@@ -36,6 +38,11 @@ class LineLayer<T> extends ChartLayer<T> {
   /// Key of the gradient fill while [fill] is on and there is something to
   /// shade.
   static const fillKey = ValueKey("interactive_chart.lineFill");
+
+  /// Side of the square around each point that [onPointTap] and
+  /// [onPointHover] answer to. Where neighbouring squares overlap, the later
+  /// point wins.
+  static const pointHitSize = 12.0;
 
   final double Function(T datum) valueOf;
   final Color color;
@@ -87,7 +94,9 @@ class LineLayer<T> extends ChartLayer<T> {
   @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
     final segments = <Widget>[];
-    final points = <Widget>[];
+    // Hit targets of the points, and their indices.
+    final targets = <Rect>[];
+    final targetIndices = <int>[];
     // Gap-free runs of points, for the fill.
     final runs = <List<Offset>>[];
     Offset? prev;
@@ -111,26 +120,15 @@ class LineLayer<T> extends ChartLayer<T> {
       prev = point;
 
       if (onPointTap != null || onPointHover != null) {
-        final index = i;
-        const hitSize = 12.0;
-        points.add(
-          Positioned(
-            left: x - hitSize / 2,
-            top: y - hitSize / 2,
-            width: hitSize,
-            height: hitSize,
-            child: MouseRegion(
-              onEnter: onPointHover == null
-                  ? null
-                  : (_) => onPointHover!(index),
-              onExit: onPointHover == null ? null : (_) => onPointHover!(null),
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: onPointTap == null ? null : () => onPointTap!(index),
-              ),
-            ),
+        targets.add(
+          Rect.fromLTWH(
+            x - pointHitSize / 2,
+            y - pointHitSize / 2,
+            pointHitSize,
+            pointHitSize,
           ),
         );
+        targetIndices.add(i);
       }
     }
 
@@ -153,7 +151,20 @@ class LineLayer<T> extends ChartLayer<T> {
             ),
           ),
         ...segments,
-        ...points,
+        if (targets.isNotEmpty)
+          Positioned.fill(
+            // Keyed so it keeps its hover state when the number of segments
+            // before it changes.
+            key: const ValueKey("interactive_chart.linePointTargets"),
+            child: ItemHitRegion(
+              resolve: (p) => switch (topmostRectAt(targets, p, pointHitSize)) {
+                final k? => targetIndices[k],
+                null => null,
+              },
+              onTap: onPointTap,
+              onHover: onPointHover,
+            ),
+          ),
         ?marker,
       ],
     );

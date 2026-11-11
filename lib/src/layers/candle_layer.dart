@@ -3,16 +3,19 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/item_hit_region.dart";
+import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// R-LAYER-4: body from open/close, wick from low/high, up/down colours,
 /// configurable body-to-slot width ratio and minimum body width, and
 /// degrades to a 1px line when `slotExtent < 2`.
 ///
-/// Each candle is a real widget (a slot-wide [Positioned] column containing
-/// wick + body), so it can carry its own [onTap]/[onHover] — a canvas paint
-/// call has no way to know which pixels belong to which datum after the
-/// fact.
+/// All candles are painted in one picture ([CandlePainter]), so the cost of a
+/// frame does not depend on a widget per candle. [onTap] and [onHover] still
+/// report the candle under the pointer: one hit region over the layer looks
+/// it up in the painted geometry, each candle answering for its whole slot
+/// column. Without either callback the layer takes no pointer events.
 class CandleLayer<T> extends ChartLayer<T> {
   const CandleLayer({
     required this.openOf,
@@ -64,9 +67,56 @@ class CandleLayer<T> extends ChartLayer<T> {
 
   @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
+    final candles = _shapes(size, ctx, data);
+    final paint = CustomPaint(
+      size: size,
+      painter: CandlePainter(
+        candles: candles,
+        upColor: upColor,
+        downColor: downColor,
+      ),
+    );
+    if (onTap == null && onHover == null) {
+      return paint;
+    }
+    // Each candle answers for its whole slot column, top to bottom.
+    final columns = [
+      for (final c in candles)
+        Rect.fromLTWH(
+          ctx.xOf(c.index) - ctx.slotExtent / 2,
+          0,
+          ctx.slotExtent,
+          size.height,
+        ),
+    ];
+    final slotExtent = ctx.slotExtent;
+    return Stack(
+      children: [
+        Positioned.fill(child: paint),
+        Positioned.fill(
+          child: ItemHitRegion(
+            resolve: (p) => switch (topmostRectAt(columns, p, slotExtent)) {
+              final k? => candles[k].index,
+              null => null,
+            },
+            onTap: onTap,
+            onHover: onHover,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The visible candles' geometry, in viewport coordinates. A candle with
+  /// any non-finite field is left out.
+  List<CandleShape> _shapes(
+    Size size,
+    InteractiveChartContext ctx,
+    List<T> data,
+  ) {
     final bodyWidth = math.max(minBodyWidth, ctx.slotExtent * bodyWidthRatio);
-    final halfSlot = ctx.slotExtent / 2;
-    final children = <Widget>[];
+    final thin = ctx.slotExtent < 2;
+    final candles = <CandleShape>[];
 
     for (var i = ctx.visibleStart; i < ctx.visibleEnd && i < data.length; i++) {
       final datum = data[i];
@@ -78,8 +128,6 @@ class CandleLayer<T> extends ChartLayer<T> {
         continue;
       }
 
-      final up = c >= o;
-      final color = up ? upColor : downColor;
       final x = ctx.xOf(i);
       final yHigh = ctx.yOf(h);
       final yLow = ctx.yOf(l);
@@ -88,52 +136,22 @@ class CandleLayer<T> extends ChartLayer<T> {
       final top = math.min(yOpen, yClose);
       final bottom = math.max(math.max(yOpen, yClose), top + 1);
 
-      final body = <Widget>[
-        Positioned(
-          left: halfSlot - 0.5,
-          top: yHigh,
-          width: 1,
-          height: math.max(0, yLow - yHigh),
-          child: ColoredBox(color: color),
-        ),
-        if (ctx.slotExtent < 2)
-          Positioned(
-            left: halfSlot - 0.5,
-            top: math.min(yOpen, yClose),
-            width: 1,
-            height: math.max(1, (yOpen - yClose).abs()),
-            child: ColoredBox(color: color),
-          )
-        else
-          Positioned(
-            left: halfSlot - bodyWidth / 2,
-            top: top,
-            width: bodyWidth,
-            height: bottom - top,
-            child: ColoredBox(color: color),
-          ),
-      ];
-
-      final index = i;
-      children.add(
-        Positioned(
-          left: x - halfSlot,
-          top: 0,
-          width: ctx.slotExtent,
-          height: size.height,
-          child: MouseRegion(
-            onEnter: onHover == null ? null : (_) => onHover!(index),
-            onExit: onHover == null ? null : (_) => onHover!(null),
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: onTap == null ? null : () => onTap!(index),
-              child: Stack(clipBehavior: Clip.none, children: body),
-            ),
-          ),
+      candles.add(
+        CandleShape(
+          index: i,
+          up: c >= o,
+          wick: Rect.fromLTWH(x - 0.5, yHigh, 1, math.max(0, yLow - yHigh)),
+          body: thin
+              ? Rect.fromLTWH(
+                  x - 0.5,
+                  top,
+                  1,
+                  math.max(1, (yOpen - yClose).abs()),
+                )
+              : Rect.fromLTWH(x - bodyWidth / 2, top, bodyWidth, bottom - top),
         ),
       );
     }
-
-    return Stack(children: children);
+    return candles;
   }
 }

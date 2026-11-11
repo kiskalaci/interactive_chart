@@ -63,11 +63,18 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   inference and weekend skipping.
 - **Layers** (§8) — `GridLayer`, `LineLayer`, `CandleLayer`, `HistogramLayer`,
   `CrosshairLayer`, `PriceTagLayer`, `EventLayer`, each declaring (or opting out of) autoscale extent
-  contribution. Each layer builds a real widget tree (`Positioned`/`Stack`
-  children, one per visible slot) rather than painting to a `Canvas`, so
-  `CandleLayer`, `HistogramLayer`, and `LineLayer` expose per-item
-  `onTap`/`onHover` callbacks — not expressible when a whole layer was one
-  opaque paint call.
+  contribution. Each layer returns a widget, so layers compose with the rest
+  of Flutter. `CandleLayer` and `HistogramLayer` paint all their items in one
+  `CustomPainter` (`lib/src/painting/shape_painters.dart`), and `LineLayer`'s
+  stroke is still one rotated box per segment. Per-item `onTap`/`onHover`
+  callbacks on candles, bars and line points go through one `ItemHitRegion`
+  per layer (`lib/src/painting/item_hit_region.dart`), which looks the item up
+  in the painted geometry: a candle answers for its slot column, a bar for its
+  rectangle, a line point for a 12 px square (the later point wins where they
+  overlap). The region is only hit over an item, so pointers elsewhere reach
+  the layers beneath. A mouse that stays still while the items move under it
+  (pan, zoom, new data) is re-resolved after the frame. The number of widgets
+  no longer grows with the visible slots (TC-LAYER-02b).
 - **Crosshair + readouts** (§9) — hover (desktop) / long-press-drag (touch) /
   tap, value + time badges, projected-slot handling (time only, no value).
 - **Controller** (§10) — visible range, slot extent, autoscale toggle,
@@ -221,17 +228,11 @@ building all of §1–16 is a multi-milestone effort (see requirements.md §14):
   example when opened at `ChartAnchor.left`). No `failed` state, no
   trailing-direction paging, and no same-frame guarantee beyond the
   prepend compensation above (R-PAGE-12).
-- **No render-object tree (R-PERF-1, R-LAYOUT-2)**. Each layer builds a
-  `Widget` tree (child-managed style, R-LAYER-1) rather than a `CustomPainter`,
-  and the whole widget calls `setState` on every view change
-  (pan/zoom/value extent) rather than driving `markNeedsLayout`/`markNeedsPaint`
-  directly on render objects. This trades away the painting-layer style's
-  perf headroom in exchange for per-item interactivity (`onTap`/`onHover` on
-  candles, histogram bars, and line points) and real widget composition —
-  costs more per frame than the spec's target architecture (more elements
-  than the earlier `CustomPainter` version, which itself already exceeded
-  budget) — the old prototype in `lib/chart/` validated the render-object
-  approach and would be the basis for a production implementation.
+- **No render-object tree (R-PERF-1, R-LAYOUT-2)**. The whole widget calls
+  `setState` on every view change (pan/zoom/value extent) and rebuilds its
+  layers, rather than driving `markNeedsLayout`/`markNeedsPaint` directly on
+  render objects. The layers themselves are now cheap to rebuild: the
+  per-slot items are painted, not built as widgets (see **Layers** above).
 - **Two-pass axis layout is approximated** (R-AXIS-3/4). Axis gutter size is
   carried over from the previous frame's measured labels rather than a true
   dry-layout pass before the viewport is sized. Grow-only sizing (R-AXIS-5)

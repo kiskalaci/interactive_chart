@@ -3,14 +3,17 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/item_hit_region.dart";
+import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// A non-negative magnitude series (volume) drawn in its own bottom strip of
 /// the viewport, scaled to its own visible max. Opts out of autoscale by
 /// default (R-SCALE-9) — a volume histogram must not compress the price
 /// scale). A true stacked sub-pane (R-LAYOUT-4) is out of scope for this POC;
-/// this is a fixed-fraction overlay strip instead. Each bar is a real widget
-/// so it can carry its own [onTap]/[onHover].
+/// this is a fixed-fraction overlay strip instead. The bars are painted in
+/// one picture; [onTap] and [onHover] report the bar under the pointer
+/// through one hit region over the layer. A bar of zero or less is not drawn.
 class HistogramLayer<T> extends ChartLayer<T> {
   const HistogramLayer({
     required this.valueOf,
@@ -65,38 +68,44 @@ class HistogramLayer<T> extends ChartLayer<T> {
     final stripTop = size.height - stripHeight;
     final barWidth = math.max(1, ctx.slotExtent * 0.7).toDouble();
 
-    final bars = <Widget>[];
+    final bars = <Rect>[];
+    final indices = <int>[];
     for (var i = ctx.visibleStart; i < ctx.visibleEnd && i < data.length; i++) {
       final v = valueOf(data[i]);
-      if (v.isNaN || v.isInfinite) {
+      if (v.isNaN || v.isInfinite || v <= 0) {
         continue;
       }
       final x = ctx.xOf(i);
       final barHeight = stripHeight * (v / localMax);
-      final index = i;
-
       bars.add(
-        Positioned(
-          left: x - barWidth / 2,
-          top: size.height - barHeight,
-          width: barWidth,
-          height: barHeight,
-          child: MouseRegion(
-            onEnter: onHover == null ? null : (_) => onHover!(index),
-            onExit: onHover == null ? null : (_) => onHover!(null),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap == null ? null : () => onTap!(index),
-              child: ColoredBox(color: color),
-            ),
-          ),
+        Rect.fromLTWH(
+          x - barWidth / 2,
+          size.height - barHeight,
+          barWidth,
+          barHeight,
         ),
       );
+      indices.add(i);
     }
 
     return Stack(
       children: [
-        ...bars,
+        Positioned.fill(
+          child: CustomPaint(
+            painter: BarPainter(bars: bars, color: color),
+          ),
+        ),
+        if (onTap != null || onHover != null)
+          Positioned.fill(
+            child: ItemHitRegion(
+              resolve: (p) => switch (topmostRectAt(bars, p, barWidth)) {
+                final k? => indices[k],
+                null => null,
+              },
+              onTap: onTap,
+              onHover: onHover,
+            ),
+          ),
         // Baseline so the strip reads as its own region.
         Positioned(
           left: 0,
