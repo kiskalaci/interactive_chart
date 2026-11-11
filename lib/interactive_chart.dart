@@ -13,3 +13,4 @@ export "package:interactive_chart/src/layers/crosshair_layer.dart";
 export "package:interactive_chart/src/layers/grid_layer.dart";
 export "package:interactive_chart/src/layers/histogram_layer.dart";
 export "package:interactive_chart/src/layers/line_layer.dart";
+export "package:interactive_chart/src/pulsing_dot.dart";
