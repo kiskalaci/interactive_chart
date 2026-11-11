@@ -620,7 +620,11 @@ boundary and so wins the month weight, replacing its day number.
   moving averages are continuous at the edges).
 - **R-LAYER-3 [M]** v1 ships: `GridLayer`, `LineLayer`, `AreaLayer`,
   `CandleLayer`, `OhlcBarLayer`, `HistogramLayer` (volume), `CrosshairLayer`,
-  `MarkerLayer`, `PriceTagLayer`.
+  `MarkerLayer`, `PriceTagLayer`, `EventLayer`.
+  `EventLayer` marks dated financial events (dividends, earnings, revenue)
+  with small icons at the day they happened on, above the bottom strip.
+  Tapping one opens a configurable details card (title, description, close
+  button) in the middle of the chart.
   `PriceTagLayer` draws a horizontal line across the viewport at the value of
   the newest datum in the whole dataset (not the newest visible one), plus a
   tag with that value on the value axis. The tag text is cropped, never

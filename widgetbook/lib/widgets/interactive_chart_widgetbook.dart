@@ -5,6 +5,7 @@ import "package:flutter/material.dart";
 import "package:interactive_chart/candle.dart";
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart_widgetbook/color_palette.dart";
+import "package:interactive_chart_widgetbook/time_mark_label.dart";
 import "package:widgetbook/widgetbook.dart";
 import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 
@@ -15,7 +16,10 @@ import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 /// - a latest-price line and axis tag (`PriceTagLayer`),
 /// - a live subscription (10-second candles, one tick per second), and
 /// - pagination that loads older history as the user pans back in time.
-@widgetbook.UseCase(name: "Interactive chart", type: InteractiveChart)
+@widgetbook.UseCase(
+  name: "Chart (subscription + pagination)",
+  type: InteractiveChart,
+)
 Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
   initialAnchor: context.knobs.object.dropdown(
     label: "Initial anchor",
@@ -440,6 +444,7 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
                     ),
                     timeAxis: TimeAxisConfig(
                       placement: widget.timeAxisPlacement,
+                      formatter: formatTimeMark,
                     ),
                     layers: [
                       const GridLayer<Candle>(),

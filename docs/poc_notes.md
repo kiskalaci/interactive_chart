@@ -62,7 +62,7 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   flicker it, and projection into the overscroll region with modal-interval
   inference and weekend skipping.
 - **Layers** (§8) — `GridLayer`, `LineLayer`, `CandleLayer`, `HistogramLayer`,
-  `CrosshairLayer`, `PriceTagLayer`, each declaring (or opting out of) autoscale extent
+  `CrosshairLayer`, `PriceTagLayer`, `EventLayer`, each declaring (or opting out of) autoscale extent
   contribution. Each layer builds a real widget tree (`Positioned`/`Stack`
   children, one per visible slot) rather than painting to a `Canvas`, so
   `CandleLayer`, `HistogramLayer`, and `LineLayer` expose per-item
@@ -139,6 +139,28 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   `buildValueAxisOverlay` (stacked over the axis labels; gets the gutter size)
   and `measureValueAxisOverlayWidth` (so the grow-only gutter widens to fit
   the tag instead of clipping it).
+- **`EventLayer`** marks financial events (dividends, earnings, revenue and
+  so on). A `ChartEvent` has a `time` (only its *day* counts), a `title`, a
+  `description`, an `IconData` and a colour. Each event is a small round icon
+  at the first datum of its day, resting `bottomInsetFraction` of the viewport
+  height above the bottom edge (pass a `HistogramLayer`'s `heightFraction` to
+  sit just above its strip); events on the same day stack upwards. A day with
+  no datum (weekend, holiday) gets no icon, and only events in the visible
+  range are built. When zoomed out so far that the icons of neighbouring days
+  would overlap (closer than the marker's width), **all the icons that touch
+  are hidden**, as on TradingView, and come back on zooming in. The choice is
+  made over all events, not just the visible ones, so it depends on the zoom
+  only and does not flicker while panning. A day's stack of same-day events
+  counts as one icon column. Tapping an icon opens a card in the middle of the chart
+  with the title, description and a close button, over a dimmed barrier. The
+  card is configured through `EventOverlayConfig` (colours, radius, padding,
+  max width, shadow, text styles, close-button content, whether a tap outside
+  closes it) or replaced entirely with `overlayBuilder`. `onEventTap` reports
+  taps. The open card is tracked by event (`ChartEvent` is `Equatable`), so
+  it survives pans, zooms and new data and closes when its event is removed.
+  Put the layer last in the list so its icons and card sit above the others.
+  Layers have no state of their own, so the layer builds a small stateful
+  widget to remember which card is open.
 - **Equal-weight time marks are tie-broken by index**, so labels are stable
   when data is appended or the zoom changes.
 - **The crosshair time badge shows the time of day** and can be formatted with
@@ -241,7 +263,7 @@ building all of §1–16 is a multi-milestone effort (see requirements.md §14):
 
 ## Widgetbook demo
 
-The single use case, **"Interactive chart"** (`widgetbook/lib/widgets/`),
+The main use case, **"Interactive chart"** (`widgetbook/lib/widgets/`),
 combines:
 
 - a Candles / Line toggle (the Line series carries a `PulsingDot` via
@@ -250,6 +272,11 @@ combines:
   knob (`Show volume`, `Show MA 20`);
 - a latest-price line and axis tag (`PriceTagLayer`), with knobs for visibility
   and precision (`Show price tag`, `Price tag precision`);
+- financial events (`EventLayer`): dividend, earnings and revenue icons above
+  the volume histogram, one or more per day the data covers (today gets all
+  three, so they stack; earlier days get one, so the layer's overlap hiding
+  shows when zoomed out). Tapping one opens the details card. Knobs show or
+  hide each kind and switch off dismissing the card by tapping outside it;
 - a live subscription: 10-second candles, one tick per second, updating the
   forming candle in place and appending a new one when the clock enters a
   new bucket (flat candles fill any buckets missed while paused), with
@@ -262,6 +289,13 @@ combines:
   `ColorPalette` and follow the theme;
 - knobs for initial anchor, axis placements, initial slot extent, pan, zoom
   and crosshair.
+
+A second use case, **"Chart events"** (`events_widgetbook.dart`), shows
+`EventLayer` on its own: a daily chart with quarterly dividend, earnings and
+revenue events (earnings and revenue share a day, to show stacking) above the
+volume histogram, with a knob per kind, one for dismissing the card by tapping
+outside it, and one for the initial slot extent. Zoom out to see overlapping
+icons hide.
 
 Known limitation: Widgetbook keys each use case by its URI, which encodes the
 knob values, so **changing any knob (or the theme) disposes and recreates the
@@ -594,6 +628,11 @@ a vertical line at every visible time mark, which TC-GRID-01 covers.
 | TC-LINE-08 | ✅ Marker position | Marker centre equals `(xOf(last), yOf(value))` for odd and even marker sizes | W | P0 |
 | TC-LINE-09 | ✅ Marker ignores pointer events | Hover and drag over the marker behave as if it were not there | W | P0 |
 | TC-LINE-10 | ✅ Live tick moves the last value | Marker moves with it; a stateful marker (e.g. animation) keeps its state across ticks | W | P1 |
+| TC-EVENT-01 | ✅ Markers (`test/event_layer_test.dart`) | One icon per event, centred on its day's slot, resting on the bottom (or `bottomInsetFraction` up); same-day events stack; days without a datum and off-screen events are not built | W | P0 |
+| TC-EVENT-05 | ✅ Overlap | Icons closer than a marker width are hidden (every icon of a touching cluster), return when zoomed in, and the result does not change with the pan offset; same-day stacks are not hidden | W | P0 |
+| TC-EVENT-02 | ✅ Details card | Tapping an icon opens a card centred in the viewport with title, description and close button; the button, or a tap outside, closes it; a tap on the card does not | W | P0 |
+| TC-EVENT-03 | ✅ Card configuration | `EventOverlayConfig` fields apply, `overlayBuilder` replaces the card, `dismissOnBarrierTap: false` keeps it open, `onEventTap` fires | W | P1 |
+| TC-EVENT-04 | ✅ Card lifetime | Stays open across pans and appended data; closes when its event is removed; a drag over the chart still pans | W | P1 |
 | TC-PRICE-01 | ✅ `truncateToDecimals` | Crops toward zero, never rounds (`1.999` → `1.99`, `-1.239` → `-1.23`), pads with zeros, no `-0.00`, correct for exponent-form doubles, `0.29` stays `0.29` | U | P0 |
 | TC-PRICE-02 | ✅ Tag text (`test/price_tag_layer_test.dart`) | Newest value cropped to `precision` (default 2) | W | P0 |
 | TC-PRICE-03 | ✅ Line | 1 px, full viewport width, at `yOf(latest)` | W | P0 |

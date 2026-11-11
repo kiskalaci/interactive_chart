@@ -16,6 +16,7 @@ export "package:interactive_chart/src/interactive_chart_widget.dart"
 export "package:interactive_chart/src/layer.dart";
 export "package:interactive_chart/src/layers/candle_layer.dart";
 export "package:interactive_chart/src/layers/crosshair_layer.dart";
+export "package:interactive_chart/src/layers/event_layer.dart";
 export "package:interactive_chart/src/layers/grid_layer.dart";
 export "package:interactive_chart/src/layers/histogram_layer.dart";
 export "package:interactive_chart/src/layers/line_layer.dart";

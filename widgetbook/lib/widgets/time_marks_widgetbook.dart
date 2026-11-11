@@ -4,7 +4,7 @@ import "package:flutter/material.dart";
 import "package:interactive_chart/candle.dart";
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart_widgetbook/color_palette.dart";
-import "package:intl/intl.dart";
+import "package:interactive_chart_widgetbook/time_mark_label.dart";
 import "package:widgetbook/widgetbook.dart";
 import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 
@@ -61,26 +61,6 @@ enum _Step {
 
   final String label;
   final Duration duration;
-}
-
-final _year = DateFormat.y();
-final _month = DateFormat.MMM();
-final _day = DateFormat.d();
-final _hourMinute = DateFormat.Hm();
-final _hourMinuteSecond = DateFormat.Hms();
-
-String _label(DateTime t, TickMarkWeight weight) {
-  if (weight >= TickMarkWeight.year) {
-    return _year.format(t);
-  }
-  if (weight >= TickMarkWeight.month) {
-    return _month.format(t);
-  }
-  if (weight >= TickMarkWeight.day) {
-    return _day.format(t);
-  }
-  return (weight >= TickMarkWeight.minute1 ? _hourMinute : _hourMinuteSecond)
-      .format(t);
 }
 
 class _TimeMarksDemo extends StatelessWidget {
@@ -144,8 +124,8 @@ class _TimeMarksDemo extends StatelessWidget {
         timeAxis: TimeAxisConfig(
           placement: timeAxisPlacement,
           formatter: showWeights
-              ? (t, weight) => "${_label(t, weight)} ${weight.name}"
-              : _label,
+              ? (t, weight) => "${formatTimeMark(t, weight)} ${weight.name}"
+              : formatTimeMark,
         ),
         layers: [
           const GridLayer<Candle>(),

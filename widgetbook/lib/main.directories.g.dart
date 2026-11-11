@@ -11,6 +11,8 @@
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 
+import 'package:interactive_chart_widgetbook/widgets/events_widgetbook.dart'
+    as _interactive_chart_widgetbook_widgets_events_widgetbook;
 import 'package:interactive_chart_widgetbook/widgets/interactive_chart_widgetbook.dart'
     as _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook;
 import 'package:interactive_chart_widgetbook/widgets/time_marks_widgetbook.dart'
@@ -22,10 +24,15 @@ final directories = <_widgetbook.WidgetbookNode>[
     name: 'InteractiveChart',
     useCases: [
       _widgetbook.WidgetbookUseCase(
-        name: 'Interactive chart',
+        name: 'Chart (subscription + pagination)',
         builder:
             _interactive_chart_widgetbook_widgets_interactive_chart_widgetbook
                 .interactiveChartUseCase,
+      ),
+      _widgetbook.WidgetbookUseCase(
+        name: 'Events',
+        builder: _interactive_chart_widgetbook_widgets_events_widgetbook
+            .chartEventsUseCase,
       ),
       _widgetbook.WidgetbookUseCase(
         name: 'Time mark weights',
