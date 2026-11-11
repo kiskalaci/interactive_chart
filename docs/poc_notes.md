@@ -65,8 +65,10 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   `CrosshairLayer`, `PriceTagLayer`, `EventLayer`, each declaring (or opting out of) autoscale extent
   contribution. Each layer returns a widget, so layers compose with the rest
   of Flutter. `CandleLayer` and `HistogramLayer` paint all their items in one
-  `CustomPainter` (`lib/src/painting/shape_painters.dart`), and `LineLayer`'s
-  stroke is still one rotated box per segment. Per-item `onTap`/`onHover`
+  `CustomPainter` (`lib/src/painting/shape_painters.dart`), and `LineLayer`
+  strokes each gap-free run of points as one path with round joins (no
+  notches at sharp turns; a lone point between two gaps draws nothing).
+  Per-item `onTap`/`onHover`
   callbacks on candles, bars and line points go through one `ItemHitRegion`
   per layer (`lib/src/painting/item_hit_region.dart`), which looks the item up
   in the painted geometry: a candle answers for its slot column, a bar for its

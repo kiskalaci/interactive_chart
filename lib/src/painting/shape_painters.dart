@@ -82,3 +82,51 @@ class BarPainter extends CustomPainter {
   bool shouldRepaint(BarPainter old) =>
       !identical(old.bars, bars) || old.color != color;
 }
+
+/// Strokes each run of [runs] as one connected line: a polyline with round
+/// joins, so sharp turns have no notches or gaps. A run needs at least two
+/// points to draw anything; separate runs are not joined, which is how a gap
+/// in the data shows.
+class LinePainter extends CustomPainter {
+  const LinePainter({
+    required this.runs,
+    required this.color,
+    required this.strokeWidth,
+  });
+
+  final List<List<Offset>> runs;
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path();
+    for (final run in runs) {
+      if (run.length < 2) {
+        continue;
+      }
+      path.moveTo(run.first.dx, run.first.dy);
+      for (var i = 1; i < run.length; i++) {
+        path.lineTo(run[i].dx, run[i].dy);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  /// Painting only: a layer's taps and hovers go through its hit region.
+  @override
+  bool hitTest(Offset position) => false;
+
+  @override
+  bool shouldRepaint(LinePainter old) =>
+      !identical(old.runs, runs) ||
+      old.color != color ||
+      old.strokeWidth != strokeWidth;
+}

@@ -10,9 +10,9 @@ import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/painting/item_hit_region.dart";
-import "package:interactive_chart/src/painting/shape_painters.dart";
 
 import "support/chart_harness.dart";
+import "support/painted.dart";
 import "support/variants.dart";
 
 const _up = Color(0xFF00AA00);
@@ -31,41 +31,6 @@ Finder _boxes(Color color) => find.byWidgetPredicate(
   (w) => w is ColoredBox && w.color == color,
   description: "ColoredBox $color",
 );
-
-/// The painted candles, in viewport coordinates (empty if none are painted).
-List<CandleShape> _candles(WidgetTester tester) => [
-  for (final w in tester.widgetList<CustomPaint>(find.byType(CustomPaint)))
-    if (w.painter case final CandlePainter p) ...p.candles,
-];
-
-/// The painted histogram bars, in viewport coordinates.
-List<Rect> _bars(WidgetTester tester) => [
-  for (final w in tester.widgetList<CustomPaint>(find.byType(CustomPaint)))
-    if (w.painter case final BarPainter p) ...p.bars,
-];
-
-/// The colour of the pixel at [at] (logical screen coordinates) of the
-/// rendered app.
-Future<Color> _colorAt(WidgetTester tester, Offset at) async {
-  final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.byType(RepaintBoundary).first,
-  );
-  final bytes = await tester.runAsync(() async {
-    final image = await boundary.toImage();
-    final data = await image.toByteData();
-    final width = image.width;
-    image.dispose();
-    return (data!, width);
-  });
-  final (data, width) = bytes!;
-  final i = (at.dy.floor() * width + at.dx.floor()) * 4;
-  return Color.fromARGB(
-    data.getUint8(i + 3),
-    data.getUint8(i),
-    data.getUint8(i + 1),
-    data.getUint8(i + 2),
-  );
-}
 
 /// Every element under the chart, a measure of how much it builds.
 int _elementCount() => find
@@ -186,9 +151,9 @@ void main() {
             ],
             count: n,
           );
-          return _candles(tester).length +
-              _bars(tester).length +
-              _boxes(_lineColor).evaluate().length;
+          return paintedCandles(tester).length +
+              paintedBars(tester).length +
+              paintedLineRuns(tester).fold(0, (n, run) => n + run.length);
         }
 
         final small = await boxCount(1000);
@@ -200,7 +165,8 @@ void main() {
     );
 
     testWidgetsOnce(
-      "TC-LAYER-02b candles and bars build the same widgets for 25 or 400 "
+      "TC-LAYER-02b candles, bars and lines build the same widgets for 25 "
+      "or 400 "
       "visible slots",
       (tester) async {
         Future<int> elements(double slotExtent) async {
@@ -217,17 +183,22 @@ void main() {
                 onHover: (_) {},
               ),
               HistogramLayer<int>(valueOf: (i) => 5.0 + i % 3, onTap: (_) {}),
+              LineLayer<int>(
+                valueOf: (i) => 10.0 + i % 5,
+                onPointTap: (_) {},
+                fill: true,
+              ),
             ],
             count: 2000,
             slotExtent: slotExtent,
           );
-          expect(_candles(tester), isNotEmpty);
+          expect(paintedCandles(tester), isNotEmpty);
           return _elementCount();
         }
 
         final few = await elements(32);
         final many = await elements(2);
-        expect(_candles(tester).length, greaterThan(350));
+        expect(paintedCandles(tester).length, greaterThan(350));
         expect(many, few);
       },
     );
@@ -369,8 +340,11 @@ void main() {
         () => [candles(open: (i) => opens[i], close: (i) => closes[i])],
         count: 3,
       );
-      expect([for (final c in _candles(tester)) c.up], [true, false, true]);
-      expect([for (final c in _candles(tester)) c.index], [0, 1, 2]);
+      expect(
+        [for (final c in paintedCandles(tester)) c.up],
+        [true, false, true],
+      );
+      expect([for (final c in paintedCandles(tester)) c.index], [0, 1, 2]);
     });
 
     testWidgets("TC-CANDLE-02 body width and minimum body height", (
@@ -382,7 +356,7 @@ void main() {
         count: 5,
         slotExtent: 20,
       );
-      final bodies = [for (final c in _candles(tester)) c.body];
+      final bodies = [for (final c in paintedCandles(tester)) c.body];
       expect(bodies.length, 5);
       for (final r in bodies) {
         expect(r.width, closeTo(14, 1e-6)); // 20 * 0.7
@@ -407,7 +381,7 @@ void main() {
         count: 4,
         slotExtent: 12,
       );
-      final bodies = [for (final c in _candles(tester)) c.body];
+      final bodies = [for (final c in paintedCandles(tester)) c.body];
       expect(bodies, isNotEmpty);
       for (final r in bodies) {
         expect(r.width, closeTo(6, 1e-6));
@@ -424,7 +398,7 @@ void main() {
         slotExtent: 1.5,
       );
       final rects = [
-        for (final c in _candles(tester)) ...[c.wick, c.body],
+        for (final c in paintedCandles(tester)) ...[c.wick, c.body],
       ];
       expect(rects, isNotEmpty);
       for (final r in rects) {
@@ -446,7 +420,7 @@ void main() {
         count: 3,
         slotExtent: 20,
       );
-      final shapes = _candles(tester);
+      final shapes = paintedCandles(tester);
       expect(shapes.length, 3);
       for (final c in shapes) {
         expect(c.wick.width, 1);
@@ -475,7 +449,10 @@ void main() {
         count: 10,
       );
       expect(tester.takeException(), isNull);
-      expect([for (final c in _candles(tester)) c.index], [0, 1, 6, 7, 8, 9]);
+      expect(
+        [for (final c in paintedCandles(tester)) c.index],
+        [0, 1, 6, 7, 8, 9],
+      );
     });
 
     testWidgets("TC-CANDLE-06 tap reports the index; hover enter and exit", (
@@ -536,12 +513,12 @@ void main() {
       final origin = tester.getTopLeft(_chartFinder);
       Offset at(int i, double value, {double dx = 0}) =>
           origin + Offset(h.ctx.xOf(i) + dx, h.ctx.yOf(value));
-      expect(await _colorAt(tester, at(0, 20, dx: 8)), _up); // body
-      expect(await _colorAt(tester, at(1, 20, dx: 8)), _down);
-      expect(await _colorAt(tester, at(0, 36)), _up); // wick
-      expect(await _colorAt(tester, at(1, 3)), _down);
+      expect(await colorAt(tester, at(0, 20, dx: 8)), _up); // body
+      expect(await colorAt(tester, at(1, 20, dx: 8)), _down);
+      expect(await colorAt(tester, at(0, 36)), _up); // wick
+      expect(await colorAt(tester, at(1, 3)), _down);
       // Beside the wick, above the body: nothing.
-      expect((await _colorAt(tester, at(0, 36, dx: 8))).a, 0);
+      expect((await colorAt(tester, at(0, 36, dx: 8))).a, 0);
     });
 
     testWidgets("TC-CANDLE-08 a still mouse follows the candles under it", (
@@ -641,7 +618,7 @@ void main() {
         count: 40,
       );
       final strip = h.ctx.viewportHeight * 0.25;
-      final heights = [for (final r in _bars(tester)) r.height]..sort();
+      final heights = [for (final r in paintedBars(tester)) r.height]..sort();
       expect(heights.last, closeTo(strip, 1e-6));
       // 8 : 4 : 2 : 1 are in proportion.
       expect(heights.toSet().length, 4);
@@ -658,7 +635,9 @@ void main() {
         count: 600,
       );
       final strip = h.ctx.viewportHeight * 0.25;
-      final top = [for (final r in _bars(tester)) r.height].reduce(math.max);
+      final top = [
+        for (final r in paintedBars(tester)) r.height,
+      ].reduce(math.max);
       expect(top, closeTo(strip, 1e-6));
     });
 
@@ -666,12 +645,12 @@ void main() {
       tester,
     ) async {
       await _pump(tester, () => [hist((i) => i.isEven ? double.nan : 0)]);
-      expect(_bars(tester), isEmpty);
+      expect(paintedBars(tester), isEmpty);
       expect(_boxes(_histColor), findsNothing);
       await tester.pumpWidget(const SizedBox());
       await _pump(tester, () => [hist((i) => -5)]);
       expect(tester.takeException(), isNull);
-      expect(_bars(tester), isEmpty);
+      expect(paintedBars(tester), isEmpty);
       expect(_boxes(_histColor), findsNothing);
     });
 
@@ -681,22 +660,22 @@ void main() {
       await _pump(tester, () => [hist((i) => i == 3 ? -5 : 10)], count: 10);
       expect(tester.takeException(), isNull);
       // The 9 positive bars; a bar of zero or less is not drawn.
-      expect(_bars(tester).length, 9);
-      expect(_bars(tester).every((r) => r.height > 0), isTrue);
+      expect(paintedBars(tester).length, 9);
+      expect(paintedBars(tester).every((r) => r.height > 0), isTrue);
     });
 
     testWidgets("TC-HIST-01c bars sit on the bottom edge, centred on slots, "
         "and are painted", (tester) async {
       final h = await _pump(tester, () => [hist((i) => 10)], count: 12);
       final origin = tester.getTopLeft(_chartFinder);
-      final bars = _bars(tester);
+      final bars = paintedBars(tester);
       expect(bars.length, 12);
       for (var i = 0; i < bars.length; i++) {
         expect(bars[i].center.dx, closeTo(h.ctx.xOf(i), 1e-9));
         expect(bars[i].bottom, closeTo(h.ctx.viewportHeight, 1e-9));
         expect(bars[i].width, closeTo(8 * 0.7, 1e-9));
       }
-      final color = await _colorAt(
+      final color = await colorAt(
         tester,
         origin + Offset(h.ctx.xOf(4), h.ctx.viewportHeight - 5),
       );
@@ -758,31 +737,75 @@ void main() {
           count: 10,
           slotExtent: 30,
         );
-        final segments = find.descendant(
-          of: find.byWidgetPredicate((w) => w is Positioned && w.height == 1.5),
-          matching: find.byType(Transform),
-        );
-        expect(segments, findsNWidgets(9));
-
-        // Every segment has the same slope: dy between neighbours / one slot.
-        final dy = h.ctx.yOf(12) - h.ctx.yOf(10);
-        final expectedAngle = math.atan2(dy, 30);
-        for (var i = 0; i < 9; i++) {
-          final m = tester.widget<Transform>(segments.at(i)).transform.storage;
-          expect(math.atan2(m[1], m[0]), closeTo(expectedAngle, 1e-9));
-        }
-        // And each one is as long as the distance between its two points.
-        final lengths = tester
-            .widgetList<Positioned>(
-              find.byWidgetPredicate((w) => w is Positioned && w.height == 1.5),
-            )
-            .map((p) => p.width!)
-            .toList();
-        for (final length in lengths) {
-          expect(length, closeTo(math.sqrt(30 * 30 + dy * dy), 1e-9));
-        }
+        // One run through all ten points, in order.
+        final runs = paintedLineRuns(tester);
+        expect(runs.length, 1);
+        expect(runs.single, [
+          for (var i = 0; i < 10; i++)
+            Offset(h.ctx.xOf(i), h.ctx.yOf(10.0 + i * 2)),
+        ]);
+        expect(paintedLineSegments(tester), 9);
       },
     );
+
+    testWidgets("TC-LINE-01b the stroke is painted along the line, joins "
+        "included", (tester) async {
+      // A zig-zag: up, down, up, with sharp turns at every point.
+      const stroke = 4.0;
+      final h = await _pump(
+        tester,
+        () => [
+          LineLayer<int>(
+            valueOf: (i) => i.isEven ? 0 : 10,
+            color: _lineColor,
+            strokeWidth: stroke,
+          ),
+        ],
+        count: 6,
+        slotExtent: 40,
+      );
+      final origin = tester.getTopLeft(_chartFinder);
+      Offset on(int i) =>
+          origin + Offset(h.ctx.xOf(i), h.ctx.yOf(i.isEven ? 0 : 10));
+      // Midway along each segment, and on each interior turn.
+      for (var i = 0; i < 5; i++) {
+        final mid = Offset.lerp(on(i), on(i + 1), 0.5)!;
+        expect(await colorAt(tester, mid), _lineColor, reason: "segment $i");
+      }
+      for (var i = 1; i < 5; i++) {
+        expect(await colorAt(tester, on(i)), _lineColor, reason: "turn $i");
+      }
+      // Inside the V under a peak, about 20 px from both diagonals: nothing.
+      final away = Offset(on(1).dx, on(0).dy);
+      expect((await colorAt(tester, away)).a, 0);
+    });
+
+    testWidgets("TC-LINE-02 a gap breaks the stroke and a lone point draws "
+        "nothing", (tester) async {
+      // NaN at 3 and 5, so point 4 stands alone.
+      const stroke = 4.0;
+      final h = await _pump(
+        tester,
+        () => [
+          LineLayer<int>(
+            valueOf: (i) => i == 3 || i == 5 ? double.nan : 10,
+            color: _lineColor,
+            strokeWidth: stroke,
+          ),
+        ],
+        count: 9,
+        slotExtent: 40,
+      );
+      expect([for (final r in paintedLineRuns(tester)) r.length], [3, 1, 3]);
+      expect(paintedLineSegments(tester), 4);
+      final origin = tester.getTopLeft(_chartFinder);
+      Offset at(double slot) =>
+          origin + Offset(h.ctx.xOf(0) + slot * 40, h.ctx.yOf(10));
+      expect(await colorAt(tester, at(1.5)), _lineColor);
+      expect((await colorAt(tester, at(3))).a, 0); // the gap
+      expect((await colorAt(tester, at(4))).a, 0); // the lone point
+      expect(await colorAt(tester, at(6.5)), _lineColor);
+    });
 
     // Alpha of the pixel at [at] (screen coordinates) of the rendered app.
     Future<int> alphaAt(WidgetTester tester, Offset at) async {

@@ -8,6 +8,7 @@ import "package:flutter_test/flutter_test.dart" hide testWidgets;
 import "package:interactive_chart/interactive_chart.dart";
 
 import "support/chart_harness.dart";
+import "support/painted.dart";
 import "support/variants.dart";
 
 class _Bar {
@@ -411,7 +412,7 @@ void main() {
           );
           await tester.pumpWidget(h.app(intSeries(0, 10)));
           await tester.pumpAndSettle();
-          return (tester.widgetList(find.byType(Transform)).length, h);
+          return (paintedLineSegments(tester), h);
         }
 
         final (clean, _) = await pump(values());

@@ -8,6 +8,7 @@ import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/value_axis/value_ticks.dart";
 
 import "support/chart_harness.dart";
+import "support/painted.dart";
 import "support/variants.dart";
 
 final _chartFinder = find.byType(InteractiveChart<int>);
@@ -429,22 +430,12 @@ void main() {
       final extent = ctx.slotExtent;
       final autoscale = (ctx.valueMin, ctx.valueMax);
 
-      expect(
-        find.byWidgetPredicate((w) => w is ColoredBox && w.color == light),
-        findsWidgets,
-      );
+      expect(paintedLineColors(tester), [light]);
 
       await tester.pumpWidget(themed(dark, Colors.white, (c) => ctx = c));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byWidgetPredicate((w) => w is ColoredBox && w.color == light),
-        findsNothing,
-      );
-      expect(
-        find.byWidgetPredicate((w) => w is ColoredBox && w.color == dark),
-        findsWidgets,
-      );
+      expect(paintedLineColors(tester), [dark]);
       final axisLabel = tester.widget<Text>(
         find.descendant(of: _chartFinder, matching: find.byType(Text)).first,
       );

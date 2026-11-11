@@ -5,14 +5,17 @@ import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
 import "package:interactive_chart/src/painting/item_hit_region.dart";
+import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// R-LAYER-5 (subset): solid stroke, optional fill, gap handling per
 /// R-DATA-8 — a NaN breaks the line rather than being interpolated across.
 ///
-/// The stroke is built from rotated 1px-tall [ColoredBox] segments (one real
-/// widget per gap-free pair of consecutive points) rather than a single
-/// canvas [Path]. With [onPointTap] or [onPointHover], one hit region over the
+/// The stroke is one canvas path ([LinePainter]) through every gap-free run
+/// of points, with round joins, so its cost does not depend on a widget per
+/// segment and sharp turns have no notches. A point with no finite neighbour
+/// on either side draws nothing. With [onPointTap] or [onPointHover], one hit
+/// region over the
 /// layer reports the point under the pointer: each point answers to a
 /// [pointHitSize] square around it.
 ///
@@ -38,6 +41,9 @@ class LineLayer<T> extends ChartLayer<T> {
   /// Key of the gradient fill while [fill] is on and there is something to
   /// shade.
   static const fillKey = ValueKey("interactive_chart.lineFill");
+
+  /// Key of the stroke while there is a point to draw.
+  static const strokeKey = ValueKey("interactive_chart.lineStroke");
 
   /// Side of the square around each point that [onPointTap] and
   /// [onPointHover] answer to. Where neighbouring squares overlap, the later
@@ -93,11 +99,10 @@ class LineLayer<T> extends ChartLayer<T> {
 
   @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
-    final segments = <Widget>[];
     // Hit targets of the points, and their indices.
     final targets = <Rect>[];
     final targetIndices = <int>[];
-    // Gap-free runs of points, for the fill.
+    // Gap-free runs of points, for the stroke and the fill.
     final runs = <List<Offset>>[];
     Offset? prev;
 
@@ -115,7 +120,6 @@ class LineLayer<T> extends ChartLayer<T> {
         runs.add([point]);
       } else {
         runs.last.add(point);
-        segments.add(_segment(prev, point));
       }
       prev = point;
 
@@ -150,11 +154,21 @@ class LineLayer<T> extends ChartLayer<T> {
               ),
             ),
           ),
-        ...segments,
+        if (runs.isNotEmpty)
+          Positioned.fill(
+            key: strokeKey,
+            child: CustomPaint(
+              painter: LinePainter(
+                runs: runs,
+                color: color,
+                strokeWidth: strokeWidth,
+              ),
+            ),
+          ),
         if (targets.isNotEmpty)
           Positioned.fill(
-            // Keyed so it keeps its hover state when the number of segments
-            // before it changes.
+            // Keyed so it keeps its hover state when the fill or the stroke
+            // before it comes or goes.
             key: const ValueKey("interactive_chart.linePointTargets"),
             child: ItemHitRegion(
               resolve: (p) => switch (topmostRectAt(targets, p, pointHitSize)) {
@@ -182,8 +196,8 @@ class LineLayer<T> extends ChartLayer<T> {
     }
     return Positioned(
       // Keyed so the marker keeps its element (and any State, such as a
-      // running animation) when the number of segments before it in the
-      // stack changes on a pan, zoom or appended bar.
+      // running animation) when the layers before it in the stack come or
+      // go on a pan, zoom or appended bar.
       key: const ValueKey("interactive_chart.latestPointMarker"),
       left: ctx.xOf(last),
       top: ctx.yOf(v),
@@ -194,23 +208,6 @@ class LineLayer<T> extends ChartLayer<T> {
             builder: (context) => builder(context, data[last], last),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _segment(Offset a, Offset b) {
-    final delta = b - a;
-    final length = delta.distance;
-    final angle = math.atan2(delta.dy, delta.dx);
-    return Positioned(
-      left: a.dx,
-      top: a.dy - strokeWidth / 2,
-      width: length,
-      height: strokeWidth,
-      child: Transform.rotate(
-        alignment: Alignment.centerLeft,
-        angle: angle,
-        child: ColoredBox(color: color),
       ),
     );
   }
