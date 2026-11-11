@@ -620,7 +620,13 @@ boundary and so wins the month weight, replacing its day number.
   moving averages are continuous at the edges).
 - **R-LAYER-3 [M]** v1 ships: `GridLayer`, `LineLayer`, `AreaLayer`,
   `CandleLayer`, `OhlcBarLayer`, `HistogramLayer` (volume), `CrosshairLayer`,
-  `MarkerLayer`.
+  `MarkerLayer`, `PriceTagLayer`.
+  `PriceTagLayer` draws a horizontal line across the viewport at the value of
+  the newest datum in the whole dataset (not the newest visible one), plus a
+  tag with that value on the value axis. The tag text is cropped, never
+  rounded, to a caller-set `precision` of decimals (default 2). A layer may
+  also draw on the value-axis gutter and report the width it needs, so the
+  axis can grow to fit it.
 - **R-LAYER-4 [M]** `CandleLayer` requirements: body from open/close, wick from
   low/high, up/down/doji colours, configurable body-to-slot width ratio and
   minimum body width, hollow and filled variants, correct rendering when

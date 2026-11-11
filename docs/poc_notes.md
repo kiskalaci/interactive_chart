@@ -62,7 +62,7 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   flicker it, and projection into the overscroll region with modal-interval
   inference and weekend skipping.
 - **Layers** (§8) — `GridLayer`, `LineLayer`, `CandleLayer`, `HistogramLayer`,
-  `CrosshairLayer`, each declaring (or opting out of) autoscale extent
+  `CrosshairLayer`, `PriceTagLayer`, each declaring (or opting out of) autoscale extent
   contribution. Each layer builds a real widget tree (`Positioned`/`Stack`
   children, one per visible slot) rather than painting to a `Canvas`, so
   `CandleLayer`, `HistogramLayer`, and `LineLayer` expose per-item
@@ -123,6 +123,22 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   crossed from the wall-clock fields (so it is DST-safe), and
   `TimeAxisConfig.formatter` receives a `TickMarkWeight`. Hour and minute
   marks all use the `hh:mm` label; sub-minute marks use `hh:mm:ss`.
+- **`PriceTagLayer`** marks the latest price: a 1 px horizontal line across
+  the viewport at the value of the **last datum of the whole dataset** (not the
+  last visible one, so it survives panning back in time), and a tag with that
+  value on the value axis. `valueOf` picks the value (for candles, usually the
+  close). The text is **cropped, never rounded**, to `precision` digits after
+  the decimal separator (default 2, padded with zeros): `29.999` shows as
+  `29.99`. It crops the shortest round-trip decimal text of the double
+  (`truncateToDecimals`), so `0.29` stays `0.29` rather than `0.28`. A NaN
+  newest value falls back to the last finite one. When the level is outside
+  the vertical range the tag sticks to the top or bottom edge of the axis and
+  the line is not drawn. It does not contribute to autoscale, and it is drawn
+  on the axis only when the chart has one. To paint on the gutter, which is
+  outside the layers' viewport, `ChartLayer` gained two optional hooks:
+  `buildValueAxisOverlay` (stacked over the axis labels; gets the gutter size)
+  and `measureValueAxisOverlayWidth` (so the grow-only gutter widens to fit
+  the tag instead of clipping it).
 - **Equal-weight time marks are tie-broken by index**, so labels are stable
   when data is appended or the zoom changes.
 - **The crosshair time badge shows the time of day** and can be formatted with
@@ -227,6 +243,8 @@ combines:
   `latestPointBuilder`);
 - volume histogram and 20-period moving-average layers, each switched by a
   knob (`Show volume`, `Show MA 20`);
+- a latest-price line and axis tag (`PriceTagLayer`), with knobs for visibility
+  and precision (`Show price tag`, `Price tag precision`);
 - a live subscription: 10-second candles, one tick per second, updating the
   forming candle in place and appending a new one when the clock enters a
   new bucket (flat candles fill any buckets missed while paused), with
@@ -570,6 +588,12 @@ a vertical line at every visible time mark, which TC-GRID-01 covers.
 | TC-LINE-08 | ✅ Marker position | Marker centre equals `(xOf(last), yOf(value))` for odd and even marker sizes | W | P0 |
 | TC-LINE-09 | ✅ Marker ignores pointer events | Hover and drag over the marker behave as if it were not there | W | P0 |
 | TC-LINE-10 | ✅ Live tick moves the last value | Marker moves with it; a stateful marker (e.g. animation) keeps its state across ticks | W | P1 |
+| TC-PRICE-01 | ✅ `truncateToDecimals` | Crops toward zero, never rounds (`1.999` → `1.99`, `-1.239` → `-1.23`), pads with zeros, no `-0.00`, correct for exponent-form doubles, `0.29` stays `0.29` | U | P0 |
+| TC-PRICE-02 | ✅ Tag text (`test/price_tag_layer_test.dart`) | Newest value cropped to `precision` (default 2) | W | P0 |
+| TC-PRICE-03 | ✅ Line | 1 px, full viewport width, at `yOf(latest)` | W | P0 |
+| TC-PRICE-04 | ✅ Tag position | On the value axis (left or right), centred on the line; stuck to the edge when the level is off-screen, with no line | W | P1 |
+| TC-PRICE-05 | ✅ Latest of the whole dataset | Still tagged when scrolled away from the newest bar; updates on append; a NaN newest value falls back to the last finite one | W | P0 |
+| TC-PRICE-06 | ✅ Gutter and autoscale | The axis widens so a wide tag is not clipped; the layer does not affect autoscale; no tag without a value axis; empty data draws nothing | W | P1 |
 
 ### 9. Crosshair and readouts (§9)
 

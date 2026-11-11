@@ -344,11 +344,17 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
     if (widget.valueAxis == null) {
       return;
     }
-    final measured = measureValueAxisWidth(
+    var measured = measureValueAxisWidth(
       ctx,
       widget.valueAxis!,
       textScaler: _textScaler,
     );
+    for (final layer in widget.layers) {
+      measured = math.max(
+        measured,
+        layer.measureValueAxisOverlayWidth(ctx, widget.data, _textScaler),
+      );
+    }
     if (measured > _valueAxisWidth) {
       // Grow-only (R-AXIS-5); scheduled post-frame since this mutates state
       // read during the layout pass currently in progress.
@@ -706,7 +712,21 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
               width: _valueAxisWidth,
               height: viewportHeight,
               child: _wrapValueAxisGutter(
-                ValueAxisView(ctx: ctx, config: widget.valueAxis!),
+                Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ValueAxisView(ctx: ctx, config: widget.valueAxis!),
+                    ),
+                    for (final layer in widget.layers)
+                      if (layer.buildValueAxisOverlay(
+                            Size(_valueAxisWidth, viewportHeight),
+                            ctx,
+                            widget.data,
+                          )
+                          case final overlay?)
+                        Positioned.fill(child: overlay),
+                  ],
+                ),
               ),
             );
 

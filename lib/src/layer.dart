@@ -13,4 +13,26 @@ abstract class ChartLayer<T> {
   ValueRange? extentFor(List<T> data, int start, int end) => null;
 
   Widget build(Size size, InteractiveChartContext ctx, List<T> data);
+
+  /// Optional content painted on top of the value-axis gutter, e.g. a price
+  /// tag. [size] is the gutter's own size (its width by the viewport's
+  /// height), and `ctx.yOf` maps a value to a y inside it, because the gutter
+  /// and the viewport share the same vertical extent. Not called when the
+  /// chart has no value axis. Return null (the default) to draw nothing.
+  ///
+  /// The result sits above the axis labels, so make it ignore pointer events
+  /// unless it needs them: the gutter handles value-axis zoom gestures.
+  Widget? buildValueAxisOverlay(
+    Size size,
+    InteractiveChartContext ctx,
+    List<T> data,
+  ) => null;
+
+  /// The gutter width [buildValueAxisOverlay] needs, so the value axis can
+  /// grow to fit it instead of clipping the overlay. Defaults to 0.
+  double measureValueAxisOverlayWidth(
+    InteractiveChartContext ctx,
+    List<T> data,
+    TextScaler textScaler,
+  ) => 0;
 }

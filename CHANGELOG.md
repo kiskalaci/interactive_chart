@@ -1,5 +1,7 @@
 ## Unreleased
 
+* `PriceTagLayer`: a horizontal line at the latest value of the dataset and a tag with that value on the value axis. The value is cropped, not rounded, to `precision` decimals (default 2).
+* `ChartLayer.buildValueAxisOverlay` and `ChartLayer.measureValueAxisOverlayWidth`: optional hooks for layers that draw on the value-axis gutter.
 * **Breaking:** time-axis tick weights are now the exported `TickMarkWeight` enum (each member has a `double value`) instead of `int`. `TimeAxisConfig.formatter` takes `(DateTime, TickMarkWeight)`.
 * Added the intraday tick tiers `minute5`, `minute30`, `hour3`, `hour6` and `hour12`, matching TradingView's weights.
 * `LineLayer.latestPointBuilder`: optional widget drawn on the series' latest point.

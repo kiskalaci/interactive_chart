@@ -12,6 +12,7 @@ import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 ///
 /// - a candle / line series toggle,
 /// - an optional volume histogram,
+/// - a latest-price line and axis tag (`PriceTagLayer`),
 /// - a live subscription (10-second candles, one tick per second), and
 /// - pagination that loads older history as the user pans back in time.
 @widgetbook.UseCase(name: "Interactive chart", type: InteractiveChart)
@@ -45,6 +46,16 @@ Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
     label: "Show MA 20",
     initialValue: true,
   ),
+  showPriceTag: context.knobs.boolean(
+    label: "Show price tag",
+    initialValue: true,
+  ),
+  priceTagPrecision: context.knobs.int.slider(
+    label: "Price tag precision",
+    initialValue: 2,
+    min: 0,
+    max: 6,
+  ),
   panEnabled: context.knobs.boolean(label: "Pan enabled", initialValue: true),
   zoomEnabled: context.knobs.boolean(label: "Zoom enabled", initialValue: true),
   crosshairEnabled: context.knobs.boolean(
@@ -63,6 +74,8 @@ class _InteractiveChartDemo extends StatefulWidget {
     required this.initialSlotExtent,
     required this.showVolume,
     required this.showMovingAverage,
+    required this.showPriceTag,
+    required this.priceTagPrecision,
     required this.panEnabled,
     required this.zoomEnabled,
     required this.crosshairEnabled,
@@ -74,6 +87,8 @@ class _InteractiveChartDemo extends StatefulWidget {
   final double initialSlotExtent;
   final bool showVolume;
   final bool showMovingAverage;
+  final bool showPriceTag;
+  final int priceTagPrecision;
   final bool panEnabled;
   final bool zoomEnabled;
   final bool crosshairEnabled;
@@ -445,6 +460,13 @@ class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
                         LineLayer<Candle>(
                           valueOf: (c) => c.ma20,
                           color: colors.purple,
+                        ),
+                      if (widget.showPriceTag)
+                        PriceTagLayer<Candle>(
+                          valueOf: (c) => c.close,
+                          precision: widget.priceTagPrecision,
+                          lineColor: colors.blue.withValues(alpha: 0.6),
+                          tagColor: colors.blue,
                         ),
                       CrosshairLayer<Candle>(
                         valueOf: (c) => c.close,
