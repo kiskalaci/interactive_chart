@@ -32,6 +32,18 @@ jobs:
         run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
         working-directory: widgetbook
 
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Install root dependencies
+        run: flutter pub get
+
+      - name: Run tests with coverage
+        run: flutter test --coverage
+
+      - name: Generate coverage HTML report
+        run: genhtml coverage/lcov.info --output-directory widgetbook/build/web/coverage
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: widgetbook/build/web
