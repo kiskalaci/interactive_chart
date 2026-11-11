@@ -3,6 +3,7 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// R-LAYER-5 (subset): solid stroke, optional fill, gap handling per
 /// R-DATA-8 — a NaN breaks the line rather than being interpolated across.

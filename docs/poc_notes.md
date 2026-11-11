@@ -478,6 +478,7 @@ scale, never below 22 px). TC-AXIS-05 and 06 exercise `ValueAxisView` and
 | TC-AXIS-10 | ✅ Vertical drag on the value axis | Zooms y; autoscale off | W | P1 |
 | TC-AXIS-11 | ✅ Double-tap on the value axis | Autoscale back on, extent recomputed | W | P0 |
 | TC-AXIS-12 | ✅ Text styles (`textStyle`, `emphasizedTextStyle` for weight ≥ 60) | Applied to the right marks | W | P1 |
+| TC-AXIS-14 | ✅ The largest visible weight is bold | Only the heaviest surviving marks are bold, at any tier | W | P1 |
 | TC-AXIS-13 | ✅ Text scale factor 2.0 (accessibility font size) | Labels and gutters grow; no overlap or overflow errors | W | P1 |
 
 ### 6. Time-axis tick hierarchy (§7.3, R-TEST-4)

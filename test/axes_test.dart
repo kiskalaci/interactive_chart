@@ -476,6 +476,159 @@ void main() {
     }
   });
 
+  group("TC-AXIS-14 the largest visible weight is bold", () {
+    // Marks at slots 5, 15, 25 with the given weights, 300 px wide, plenty of
+    // room so none are dropped. The label text is the weight itself.
+    Future<Map<String, FontWeight?>> pumpMarks(
+      WidgetTester tester,
+      List<int> weights, {
+      TextStyle? style,
+    }) async {
+      final ctx = InteractiveChartContext(slotExtent: 10)
+        ..setViewportSize(300, 100)
+        ..setSlotCount(30);
+      ctx.timeTicks = [
+        for (var i = 0; i < weights.length; i++)
+          TickMark(
+            index: 5 + i * 10,
+            time: minuteTime(5 + i * 10),
+            weight: weights[i],
+            projected: false,
+          ),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 22,
+              child: TimeAxisView(
+                ctx: ctx,
+                config: style == null
+                    ? TimeAxisConfig(formatter: (time, w) => "T$w")
+                    : TimeAxisConfig(
+                        formatter: (time, w) => "T$w",
+                        textStyle: style,
+                        emphasizedTextStyle: style,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      );
+      return {
+        for (final t in tester.widgetList<Text>(_timeLabels))
+          t.data!: t.style!.fontWeight,
+      };
+    }
+
+    testWidgets("only the heaviest marks are bold", (tester) async {
+      final weights = await pumpMarks(tester, [70, 50, 20]);
+      expect(weights["T70"], FontWeight.bold);
+      expect(weights["T50"], isNot(FontWeight.bold));
+      expect(weights["T20"], isNot(FontWeight.bold));
+    });
+
+    testWidgets("every mark sharing the top weight is bold", (tester) async {
+      final weights = await pumpMarks(tester, [50, 20, 50]);
+      expect(weights["T50"], FontWeight.bold);
+      expect(weights["T20"], isNot(FontWeight.bold));
+    });
+
+    testWidgets("applies at any tier, not only year or month", (tester) async {
+      final weights = await pumpMarks(tester, [20, 10, 20]);
+      expect(weights["T20"], FontWeight.bold);
+      expect(weights["T10"], isNot(FontWeight.bold));
+    });
+
+    testWidgets("a single visible mark is bold", (tester) async {
+      final weights = await pumpMarks(tester, [10]);
+      expect(weights["T10"], FontWeight.bold);
+    });
+
+    testWidgets("a heavier mark that is dropped does not claim the bold", (
+      tester,
+    ) async {
+      // Index 0 sits 5 px from the edge: its label would cross it and is
+      // dropped, so the heaviest *visible* mark is the weight-50 one.
+      final ctx = InteractiveChartContext(slotExtent: 10)
+        ..setViewportSize(300, 100)
+        ..setSlotCount(30);
+      ctx.timeTicks = [
+        TickMark(index: 0, time: minuteTime(0), weight: 70, projected: false),
+        TickMark(index: 15, time: minuteTime(15), weight: 50, projected: false),
+        TickMark(index: 25, time: minuteTime(25), weight: 20, projected: false),
+      ];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 22,
+              child: TimeAxisView(
+                ctx: ctx,
+                config: TimeAxisConfig(formatter: (time, w) => "TLABEL-$w"),
+              ),
+            ),
+          ),
+        ),
+      );
+      final weights = {
+        for (final t in tester.widgetList<Text>(_timeLabels))
+          t.data!: t.style!.fontWeight,
+      };
+      expect(weights.keys, isNot(contains("TLABEL-70")));
+      expect(weights["TLABEL-50"], FontWeight.bold);
+      expect(weights["TLABEL-20"], isNot(FontWeight.bold));
+    });
+
+    testWidgets("keeps the configured colour and size", (tester) async {
+      const style = TextStyle(fontSize: 13, color: Color(0xFF123456));
+      await pumpMarks(tester, [20, 10], style: style);
+      final bold = tester.widget<Text>(find.text("T20")).style!;
+      expect(bold.color, style.color);
+      expect(bold.fontSize, 13);
+    });
+
+    testWidgets("the bold label stays centred on its slot", (tester) async {
+      await pumpMarks(tester, [70, 20]);
+      // Slot 5 of 10 px slots: centre x = 55.
+      final rect = tester.getRect(find.text("T70"));
+      expect(
+        rect.center.dx - tester.getTopLeft(find.byType(TimeAxisView)).dx,
+        closeTo(55, 0.01),
+      );
+    });
+
+    testWidgets("end to end: the year mark is bold when a year is in view", (
+      tester,
+    ) async {
+      // Daily bars from 2023-12-01, fitted to the screen so the year, month
+      // and day tiers can all show.
+      final start = DateTime(2023, 12, 1);
+      final screenWidth = currentScreen?.screen.width ?? 800;
+      final h = ChartHarness<int>(
+        timeOf: (i) => start.add(Duration(days: i)),
+        slotExtent: (screenWidth - 100) / 120,
+        layers: () => [LineLayer<int>(valueOf: (i) => 10.0 + i % 3)],
+      );
+      await tester.pumpWidget(h.app(intSeries(0, 120)));
+      await tester.pumpAndSettle();
+      final styles = {
+        for (final t in tester.widgetList<Text>(
+          find.descendant(of: _chartFinder, matching: find.byType(Text)),
+        ))
+          t.data!: t.style!.fontWeight,
+      };
+      expect(styles["2024"], FontWeight.bold);
+      expect(styles["Feb"], isNot(FontWeight.bold));
+    });
+  });
+
   group("TC-AXIS-13 large text scale", () {
     testWidgets("labels stay inside their gutters", (tester) async {
       final h = await _pump(

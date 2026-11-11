@@ -3,6 +3,7 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// A non-negative magnitude series (volume) drawn in its own bottom strip of
 /// the viewport, scaled to its own visible max. Opts out of autoscale by

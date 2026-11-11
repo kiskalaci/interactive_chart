@@ -3,17 +3,27 @@ import "dart:math" as math;
 
 import "package:flutter/gestures.dart";
 import "package:flutter/widgets.dart";
-import "package:interactive_chart/src/axis/time_axis.dart";
-import "package:interactive_chart/src/axis/value_axis.dart";
+import "package:interactive_chart/src/time_axis/time_axis.dart";
+import "package:interactive_chart/src/time_axis/time_axis_config.dart";
+import "package:interactive_chart/src/time_axis/time_axis_placement.dart";
+import "package:interactive_chart/src/value_axis/value_axis.dart";
+import "package:interactive_chart/src/value_axis/value_axis_config.dart";
+import "package:interactive_chart/src/value_axis/value_axis_placement.dart";
+import "package:interactive_chart/src/chart_anchor.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/controller.dart";
 import "package:interactive_chart/src/layer.dart";
 import "package:interactive_chart/src/ticks.dart";
 import "package:interactive_chart/src/web/scroll_guard.dart";
-export "package:interactive_chart/src/axis/time_axis.dart";
-export "package:interactive_chart/src/axis/value_axis.dart";
-export "package:interactive_chart/src/chart_context.dart"
-    show ChartAnchor, IndexRange, ValueRange;
+export "package:interactive_chart/src/time_axis/time_axis.dart";
+export "package:interactive_chart/src/time_axis/time_axis_config.dart";
+export "package:interactive_chart/src/time_axis/time_axis_placement.dart";
+export "package:interactive_chart/src/value_axis/value_axis.dart";
+export "package:interactive_chart/src/value_axis/value_axis_config.dart";
+export "package:interactive_chart/src/value_axis/value_axis_placement.dart";
+export "package:interactive_chart/src/chart_anchor.dart";
+export "package:interactive_chart/src/typedefs/index_range.dart";
+export "package:interactive_chart/src/typedefs/value_range.dart";
 export "package:interactive_chart/src/controller.dart";
 export "package:interactive_chart/src/layer.dart";
 

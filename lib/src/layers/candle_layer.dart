@@ -3,6 +3,7 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// R-LAYER-4: body from open/close, wick from low/high, up/down colours,
 /// configurable body-to-slot width ratio and minimum body width, and

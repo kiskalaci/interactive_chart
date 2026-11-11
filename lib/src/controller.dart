@@ -1,5 +1,6 @@
 import "package:flutter/foundation.dart";
 import "package:interactive_chart/src/chart_context.dart";
+import "package:interactive_chart/src/typedefs/index_range.dart";
 
 /// R-API-6 (subset): programmatic read/write access to visible range, zoom,
 /// autoscale and highlighted index, plus "jump to latest". Attached to the

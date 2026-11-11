@@ -20,6 +20,7 @@ Widget interactiveChartUseCase(BuildContext context) => _InteractiveChartDemo(
     label: "Initial anchor",
     options: ChartAnchor.values,
     labelBuilder: (v) => v.name,
+    initialOption: ChartAnchor.right,
   ),
   valueAxisPlacement: context.knobs.object.dropdown(
     label: "Value axis placement",
@@ -84,7 +85,7 @@ class _InteractiveChartDemo extends StatefulWidget {
 class _InteractiveChartDemoState extends State<_InteractiveChartDemo> {
   static const _candleSeconds = 10;
   static const _tickInterval = Duration(seconds: 1);
-  static const _pageSize = 120;
+  static const _pageSize = 180;
   static const _loadThresholdSlots = 20;
   static const _maxPages = 50;
 

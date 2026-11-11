@@ -1,6 +1,6 @@
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart" hide testWidgets;
-import "package:interactive_chart/src/pulsing_dot.dart";
+import "package:interactive_chart/src/widgets/pulsing_dot.dart";
 
 import "support/variants.dart";
 

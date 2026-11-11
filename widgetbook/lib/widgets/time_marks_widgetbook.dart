@@ -14,7 +14,8 @@ import "package:widgetbook_annotation/widgetbook_annotation.dart" as widgetbook;
 /// previous datum: year (70), month (60), day (50), hour (30), minute (20),
 /// otherwise 10. The series spans several years, so zooming in and out shows
 /// every tier. Heavier marks win when labels compete for space, and marks of
-/// weight 60 and above use the emphasized text style.
+/// weight 60 and above use the emphasized text style. The heaviest weight
+/// currently on screen is always bold.
 @widgetbook.UseCase(name: "Time mark weights", type: InteractiveChart)
 Widget timeMarkWeightsUseCase(BuildContext context) {
   final step = context.knobs.object.dropdown(
@@ -136,7 +137,7 @@ class _TimeMarksDemo extends StatelessWidget {
         key: ValueKey(step),
         data: candles,
         timeOf: (c) => c.time,
-        initialAnchor: ChartAnchor.left,
+        initialAnchor: ChartAnchor.right,
         initialSlotExtent: initialSlotExtent,
         valueAxis: ValueAxisConfig(placement: valueAxisPlacement),
         timeAxis: TimeAxisConfig(

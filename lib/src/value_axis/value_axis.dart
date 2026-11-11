@@ -1,26 +1,8 @@
 import "package:flutter/widgets.dart";
+import "package:interactive_chart/src/value_axis/value_axis_config.dart";
+import "package:interactive_chart/src/value_axis/value_axis_placement.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/ticks.dart";
-
-enum ValueAxisPlacement { left, right }
-
-/// R-AXIS-6/8/9. `null` at the call site means "no value axis" (R-API-3).
-class ValueAxisConfig {
-  const ValueAxisConfig({
-    this.placement = ValueAxisPlacement.right,
-    this.formatter,
-    this.textStyle = const TextStyle(fontSize: 11, color: Color(0xFF757575)),
-  });
-
-  final ValueAxisPlacement placement;
-  final String Function(double value)? formatter;
-  final TextStyle textStyle;
-
-  /// Formats [value]. Without a [formatter], [decimals] places are used
-  /// (the axis passes enough to tell adjacent ticks apart).
-  String format(double value, {int decimals = 2}) =>
-      formatter?.call(value) ?? value.toStringAsFixed(decimals);
-}
 
 /// Renders tick labels for the value axis gutter as positioned [Text]
 /// widgets. Self-sizing (measuring the widest label) is done by

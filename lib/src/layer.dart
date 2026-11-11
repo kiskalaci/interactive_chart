@@ -1,5 +1,6 @@
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
+import "package:interactive_chart/src/typedefs/value_range.dart";
 
 /// A visual element built into the viewport (§8), as a real widget tree
 /// rather than direct canvas painting — so a layer's per-slot elements can
