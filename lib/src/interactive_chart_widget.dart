@@ -215,6 +215,7 @@ class _InteractiveChartState<T> extends State<InteractiveChart<T>> {
   void didUpdateWidget(covariant InteractiveChart<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     _autoscaleDirty = true;
+    ctx.dataRevision++;
     if (widget.data.length != oldWidget.data.length) {
       // R-DATA-9: appending/changing data must not reset pan/zoom.
       final prepended = _prependedCount(oldWidget.data, widget.data);

@@ -58,6 +58,11 @@ class InteractiveChartContext extends ChangeNotifier {
 
   int slotCount = 0;
 
+  /// Bumped every time the chart's parent rebuilds it (new data, data edited
+  /// in place, or new layers). Anything cached from the data, such as a
+  /// layer's painted geometry, is stale once it changes.
+  int dataRevision = 0;
+
   /// [visibleStart, visibleEnd) clamped to real data — never includes a
   /// projected slot (R-TIME-27).
   int visibleStart = 0;

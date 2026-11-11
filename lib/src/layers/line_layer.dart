@@ -4,6 +4,7 @@ import "dart:ui" as ui;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/buffered_layer.dart";
 import "package:interactive_chart/src/painting/item_hit_region.dart";
 import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
@@ -17,7 +18,9 @@ import "package:interactive_chart/src/typedefs/value_range.dart";
 /// on either side draws nothing. With [onPointTap] or [onPointHover], one hit
 /// region over the
 /// layer reports the point under the pointer: each point answers to a
-/// [pointHitSize] square around it.
+/// [pointHitSize] square around it. Like `CandleLayer`, the line is computed
+/// for a margin beyond the view, so a pan within it moves the painted line
+/// instead of painting it again.
 ///
 /// With [fill], the area under the line is shaded with a vertical gradient:
 /// strongest ([fillTopOpacity]) at the highest point of the line in view,
@@ -99,89 +102,127 @@ class LineLayer<T> extends ChartLayer<T> {
 
   @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
-    // Hit targets of the points, and their indices.
-    final targets = <Rect>[];
-    final targetIndices = <int>[];
-    // Gap-free runs of points, for the stroke and the fill.
-    final runs = <List<Offset>>[];
-    Offset? prev;
+    final interactive = onPointTap != null || onPointHover != null;
+    // The fill's gradient starts at the highest point in view, so a pan
+    // that moves it repaints the fill.
+    final fillTop = fill ? _highestVisibleY(size, ctx, data) : null;
+    final marker = _latestPointMarker(ctx, data);
 
+    final line = BufferedLayer<_Line>(
+      ctx: ctx,
+      cacheKey: (
+        this,
+        ctx.dataRevision,
+        ctx.slotExtent,
+        ctx.valueMin,
+        ctx.valueMax,
+        size.height,
+        fillTop,
+      ),
+      compute: (start, end) =>
+          _line(ctx, data, start, end, withTargets: interactive),
+      paintersOf: (content) => [
+        if (fillTop != null && content.runs.isNotEmpty)
+          (
+            key: fillKey,
+            painter: _AreaFillPainter(
+              runs: content.runs,
+              top: fillTop,
+              color: color,
+              topOpacity: fillTopOpacity,
+              bottomOpacity: fillBottomOpacity,
+            ),
+          ),
+        if (content.runs.isNotEmpty)
+          (
+            key: strokeKey,
+            painter: LinePainter(
+              runs: content.runs,
+              color: color,
+              strokeWidth: strokeWidth,
+            ),
+          ),
+      ],
+      overlay: interactive
+          ? (content, shift) => ItemHitRegion(
+              resolve: (p) => switch (topmostRectAt(
+                content.targets,
+                p.translate(-shift, 0),
+                pointHitSize,
+              )) {
+                final k? => content.targetIndices[k],
+                null => null,
+              },
+              onTap: onPointTap,
+              onHover: onPointHover,
+            )
+          : null,
+    );
+
+    return Stack(
+      children: [
+        Positioned.fill(child: line),
+        ?marker,
+      ],
+    );
+  }
+
+  /// The y of the highest finite point in view, or the bottom of the
+  /// viewport if there is none.
+  double _highestVisibleY(
+    Size size,
+    InteractiveChartContext ctx,
+    List<T> data,
+  ) {
+    var top = size.height;
     for (var i = ctx.visibleStart; i < ctx.visibleEnd && i < data.length; i++) {
       final v = valueOf(data[i]);
+      if (v.isFinite) {
+        top = math.min(top, ctx.yOf(v));
+      }
+    }
+    return top;
+  }
+
+  /// The gap-free runs of points in `[start, end)`, in viewport coordinates at
+  /// the current scroll offset, and with [withTargets] each point's hit
+  /// square and index.
+  _Line _line(
+    InteractiveChartContext ctx,
+    List<T> data,
+    int start,
+    int end, {
+    required bool withTargets,
+  }) {
+    final targets = <Rect>[];
+    final targetIndices = <int>[];
+    final runs = <List<Offset>>[];
+    var inRun = false;
+    for (var i = start; i < end && i < data.length; i++) {
+      final v = valueOf(data[i]);
       if (v.isNaN || v.isInfinite) {
-        prev = null;
+        inRun = false;
         continue;
       }
-      final x = ctx.xOf(i);
-      final y = ctx.yOf(v);
-      final point = Offset(x, y);
-
-      if (prev == null) {
-        runs.add([point]);
-      } else {
+      final point = Offset(ctx.xOf(i), ctx.yOf(v));
+      if (inRun) {
         runs.last.add(point);
+      } else {
+        runs.add([point]);
+        inRun = true;
       }
-      prev = point;
-
-      if (onPointTap != null || onPointHover != null) {
+      if (withTargets) {
         targets.add(
-          Rect.fromLTWH(
-            x - pointHitSize / 2,
-            y - pointHitSize / 2,
-            pointHitSize,
-            pointHitSize,
+          Rect.fromCenter(
+            center: point,
+            width: pointHitSize,
+            height: pointHitSize,
           ),
         );
         targetIndices.add(i);
       }
     }
-
-    final marker = _latestPointMarker(ctx, data);
-
-    return Stack(
-      children: [
-        if (fill && runs.isNotEmpty)
-          Positioned.fill(
-            key: fillKey,
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _AreaFillPainter(
-                  runs: runs,
-                  color: color,
-                  topOpacity: fillTopOpacity,
-                  bottomOpacity: fillBottomOpacity,
-                ),
-              ),
-            ),
-          ),
-        if (runs.isNotEmpty)
-          Positioned.fill(
-            key: strokeKey,
-            child: CustomPaint(
-              painter: LinePainter(
-                runs: runs,
-                color: color,
-                strokeWidth: strokeWidth,
-              ),
-            ),
-          ),
-        if (targets.isNotEmpty)
-          Positioned.fill(
-            // Keyed so it keeps its hover state when the fill or the stroke
-            // before it comes or goes.
-            key: const ValueKey("interactive_chart.linePointTargets"),
-            child: ItemHitRegion(
-              resolve: (p) => switch (topmostRectAt(targets, p, pointHitSize)) {
-                final k? => targetIndices[k],
-                null => null,
-              },
-              onTap: onPointTap,
-              onHover: onPointHover,
-            ),
-          ),
-        ?marker,
-      ],
-    );
+    return (runs: runs, targets: targets, targetIndices: targetIndices);
   }
 
   Widget? _latestPointMarker(InteractiveChartContext ctx, List<T> data) {
@@ -214,28 +255,26 @@ class LineLayer<T> extends ChartLayer<T> {
 }
 
 /// Shades the area under each run of points with a vertical gradient from
-/// the highest point of any run down to the bottom of the canvas.
+/// [top] down to the bottom of the canvas.
 class _AreaFillPainter extends CustomPainter {
   const _AreaFillPainter({
     required this.runs,
+    required this.top,
     required this.color,
     required this.topOpacity,
     required this.bottomOpacity,
   });
 
   final List<List<Offset>> runs;
+
+  /// Where the gradient starts: the highest point of the line in view.
+  final double top;
   final Color color;
   final double topOpacity;
   final double bottomOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
-    var top = size.height;
-    for (final run in runs) {
-      for (final point in run) {
-        top = math.min(top, point.dy);
-      }
-    }
     // Keeps the gradient well defined when the line sits on the bottom edge.
     final bottom = math.max(size.height, top + 1);
     final paint = Paint()
@@ -258,10 +297,23 @@ class _AreaFillPainter extends CustomPainter {
     }
   }
 
+  /// Painting only: a layer's taps and hovers go through its hit region.
+  @override
+  bool hitTest(Offset position) => false;
+
   @override
   bool shouldRepaint(_AreaFillPainter old) =>
       old.runs != runs ||
+      old.top != top ||
       old.color != color ||
       old.topOpacity != topOpacity ||
       old.bottomOpacity != bottomOpacity;
 }
+
+/// A [LineLayer]'s computed content: its runs of points, and the points' hit
+/// squares and indices when the layer has callbacks.
+typedef _Line = ({
+  List<List<Offset>> runs,
+  List<Rect> targets,
+  List<int> targetIndices,
+});

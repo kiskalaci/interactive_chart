@@ -77,6 +77,18 @@ flutter test --platform chrome    # the same suite in a real browser (about 5 mi
   the layers beneath. A mouse that stays still while the items move under it
   (pan, zoom, new data) is re-resolved after the frame. The number of widgets
   no longer grows with the visible slots (TC-LAYER-02b).
+- **A pan moves painted layers instead of repainting them.** Candles,
+  histogram bars and lines are computed for the visible slots plus a margin
+  of a quarter of them on each side (`BufferedLayer`,
+  `lib/src/painting/buffered_layer.dart`), painted once into their own
+  repaint boundary, and moved with a `Transform` while the view scrolls
+  within that margin: no geometry is recomputed and nothing is repainted.
+  The cache is dropped when the zoom, the value extent, the viewport height,
+  the layer or the data changes. Every parent rebuild bumps
+  `ctx.dataRevision`, so an edit in place shows. With autoscale on, a pan
+  that changes the visible extent still recomputes. So does a histogram
+  whose visible maximum changes, or a filled line whose highest visible
+  point moves. Hit testing translates the pointer by the same shift.
 - **Crosshair + readouts** (§9) — hover (desktop) / long-press-drag (touch) /
   tap, value + time badges, projected-slot handling (time only, no value).
 - **Controller** (§10) — visible range, slot extent, autoscale toggle,

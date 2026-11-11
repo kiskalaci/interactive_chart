@@ -3,6 +3,7 @@ import "dart:math" as math;
 import "package:flutter/widgets.dart";
 import "package:interactive_chart/src/chart_context.dart";
 import "package:interactive_chart/src/layer.dart";
+import "package:interactive_chart/src/painting/buffered_layer.dart";
 import "package:interactive_chart/src/painting/item_hit_region.dart";
 import "package:interactive_chart/src/painting/shape_painters.dart";
 import "package:interactive_chart/src/typedefs/value_range.dart";
@@ -16,6 +17,10 @@ import "package:interactive_chart/src/typedefs/value_range.dart";
 /// report the candle under the pointer: one hit region over the layer looks
 /// it up in the painted geometry, each candle answering for its whole slot
 /// column. Without either callback the layer takes no pointer events.
+///
+/// The candles are computed for a margin of slots beyond each edge of the
+/// view and painted once; a pan that stays within that margin moves the
+/// painted picture instead of painting it again (see [BufferedLayer]).
 class CandleLayer<T> extends ChartLayer<T> {
   const CandleLayer({
     required this.openOf,
@@ -67,58 +72,77 @@ class CandleLayer<T> extends ChartLayer<T> {
 
   @override
   Widget build(Size size, InteractiveChartContext ctx, List<T> data) {
-    final candles = _shapes(size, ctx, data);
-    final paint = CustomPaint(
-      size: size,
-      painter: CandlePainter(
-        candles: candles,
-        upColor: upColor,
-        downColor: downColor,
-      ),
-    );
-    if (onTap == null && onHover == null) {
-      return paint;
-    }
-    // Each candle answers for its whole slot column, top to bottom.
-    final columns = [
-      for (final c in candles)
-        Rect.fromLTWH(
-          ctx.xOf(c.index) - ctx.slotExtent / 2,
-          0,
-          ctx.slotExtent,
-          size.height,
-        ),
-    ];
+    final interactive = onTap != null || onHover != null;
     final slotExtent = ctx.slotExtent;
-    return Stack(
-      children: [
-        Positioned.fill(child: paint),
-        Positioned.fill(
-          child: ItemHitRegion(
-            resolve: (p) => switch (topmostRectAt(columns, p, slotExtent)) {
-              final k? => candles[k].index,
-              null => null,
-            },
-            onTap: onTap,
-            onHover: onHover,
+    return BufferedLayer<_Candles>(
+      ctx: ctx,
+      cacheKey: (
+        this,
+        ctx.dataRevision,
+        slotExtent,
+        ctx.valueMin,
+        ctx.valueMax,
+        size.height,
+      ),
+      compute: (start, end) {
+        final shapes = _shapes(ctx, data, start, end);
+        return (
+          shapes: shapes,
+          // Each candle answers for its whole slot column, top to bottom.
+          columns: interactive
+              ? [
+                  for (final c in shapes)
+                    Rect.fromLTWH(
+                      c.wick.center.dx - slotExtent / 2,
+                      0,
+                      slotExtent,
+                      size.height,
+                    ),
+                ]
+              : const <Rect>[],
+        );
+      },
+      paintersOf: (content) => [
+        (
+          key: null,
+          painter: CandlePainter(
+            candles: content.shapes,
+            upColor: upColor,
+            downColor: downColor,
           ),
         ),
       ],
+      overlay: interactive
+          ? (content, shift) => ItemHitRegion(
+              resolve: (p) => switch (topmostRectAt(
+                content.columns,
+                p.translate(-shift, 0),
+                slotExtent,
+              )) {
+                final k? => content.shapes[k].index,
+                null => null,
+              },
+              onTap: onTap,
+              onHover: onHover,
+            )
+          : null,
     );
   }
 
-  /// The visible candles' geometry, in viewport coordinates. A candle with
-  /// any non-finite field is left out.
+  /// The geometry of the candles in `[start, end)`, in viewport coordinates
+  /// at the current scroll offset. A candle with any non-finite field is left
+  /// out.
   List<CandleShape> _shapes(
-    Size size,
     InteractiveChartContext ctx,
     List<T> data,
+    int start,
+    int end,
   ) {
     final bodyWidth = math.max(minBodyWidth, ctx.slotExtent * bodyWidthRatio);
     final thin = ctx.slotExtent < 2;
     final candles = <CandleShape>[];
 
-    for (var i = ctx.visibleStart; i < ctx.visibleEnd && i < data.length; i++) {
+    for (var i = start; i < end && i < data.length; i++) {
       final datum = data[i];
       final o = openOf(datum);
       final h = highOf(datum);
@@ -155,3 +179,7 @@ class CandleLayer<T> extends ChartLayer<T> {
     return candles;
   }
 }
+
+/// A [CandleLayer]'s computed content: the candles, and their hit columns
+/// when the layer has callbacks.
+typedef _Candles = ({List<CandleShape> shapes, List<Rect> columns});
